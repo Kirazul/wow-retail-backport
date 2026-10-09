@@ -12,7 +12,7 @@ length, so offsets change, so the file has to be WRITTEN.
 
 What keeps that honest is the round trip: read a model this client already
 draws, write it, read the result, and compare every element of every array -
-`python tools/lib/m2model.py --roundtrip <client path>...`. A field this module
+a round trip over the client's own models. A field this module
 gets wrong cannot survive that test on the client's own bodies.
 
 LAYOUT (version 264; retail's MD21 payload has the same header and records)
@@ -36,7 +36,7 @@ whether its keyframes go inline or into that sequence's .anim.
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import argparse
 import struct
@@ -401,7 +401,7 @@ def read_retail(m2: bytes, skel: bytes | None, anim) -> Model:
 # handful of sequences (13..107) and the parent .skel - often the base race's
 # own (Highmountain's is Tauren's 1839011) - holds the rest (341..402). Child
 # and parent bones match one to one (same key, parent and name hash). Retail's
-# rule, and the RaceGuide's working Highmountain/Mechagnome ports: the parent's
+# rule, and working Highmountain/Mechagnome ports: the parent's
 # sequence list, each child sequence replacing its (id, variation), any
 # child-only sequence appended. A sequence's keyframes come from ITS skeleton's
 # own buffers and .anim files (its own AFID), aliases are resolved inside that

@@ -1,8 +1,7 @@
 """
 m2_view.py - an M2 skinned, animated and rasterised, to look at and to diff.
 
-    python tools/lib/m2_view.py --body pandaren m --seq 0 --out shot.png
-    python tools/lib/m2_view.py --compare pandaren m      # retail vs converted
+    (library: sheet.py draws through mesh() and render())
 
 Why it exists: a converted body can pass every structural gate and still be
 wrong in a way only a picture shows - a bone that turns the wrong way, a UV
@@ -24,7 +23,7 @@ The animation evaluation follows the format, not a guess:
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import argparse
 import math
@@ -135,7 +134,7 @@ def mesh(m: M.Model, skin: dict, geosets, mats):
     pos = np.array([struct.unpack_from("<3f", raw[li], 0) for li in look])
     w = np.array([struct.unpack_from("<4B", raw[li], 12) for li in look], dtype=float) / 255.0
     # An M2 vertex names its bones directly (absolute bone indices); only the
-    # skin's per-submesh palette goes through the bone lookup. races_body's
+    # skin's per-submesh palette goes through the bone lookup. a body converter's
     # palettes() asserts look[palette + prop] == vertex byte on every weighted
     # influence, which is this same fact.
     bi = np.array([struct.unpack_from("<4B", raw[li], 16) for li in look])

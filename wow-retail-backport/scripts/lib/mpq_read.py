@@ -1,7 +1,7 @@
 """
 mpq_read.py - read an MPQ the way the client does.
 
-This exists to be the oracle for tools/test_mpq.py. Verifying our writer with a
+This exists to be the oracle for the archive round-trip test. Verifying our writer with a
 reader that does not share the client's rules proves nothing, and mpyq does not
 share them: it decides whether a sector is compressed by comparing the WHOLE
 file's remaining length against one sector's length, so any raw sector in a
@@ -23,7 +23,7 @@ read - which is exactly the set where mpyq is known to be right.
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import os
 import struct
@@ -74,7 +74,7 @@ def _inflate(sector: bytes) -> bytes:
 
 class MpqReader:
     def __init__(self, path: str, fh=None):
-        # fh: any seekable file-like object (tools/races/coa_fetch.py passes a
+        # fh: any seekable file-like object (a remote reader can pass a
         # remote one that downloads only the byte ranges actually read).
         self.fh = fh if fh is not None else open(path, "rb")
         head = self.fh.read(32)

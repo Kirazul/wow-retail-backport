@@ -119,7 +119,7 @@ another build):
 ## 7. newtech
 
 Scans every file the selection uses against the registry. PASS: nothing new.
-Anything NEW: STOP (references/new-retail-tech.md). Never skip this step: it
+Anything NEW: uncover and support it before building (references/new-retail-tech.md). Never skip this step: it
 is how a new expansion's new technology gets caught before it breaks items.
 
 ## 8. measure (once per client; again if the client's bodies change)

@@ -1,5 +1,5 @@
 """
-midnight_m2edit.py - small, exact edits on a ported (3.3.5, flat MD20) item
+m2edit.py - small, exact edits on a ported (3.3.5, flat MD20) item
 model and its 00.skin. Every function returns new bytes and leaves the input
 alone; check_264 is run by the caller on the result.
 
@@ -9,12 +9,12 @@ alone; check_264 is run by the caller on the result.
                                           attachment, event and light on bone 0;
                                           one-entry bone palette - a piece the
                                           client animates with ONE matrix (the
-                                          realm's Collections format)
+                                          per-limb piece format)
     translate(model, d)                   every vertex, particle/ribbon/attachment/
                                           light position and bound moved by d
     triangles(model, skin)                [(submesh, (a, b, c) model vertex ids)]
     islands(model, skin)                  connected triangle groups (welded by
-                                          position) - the unit the realm cut by
+                                          position) - the unit a per-limb format cuts by
     repack(model)                         the same model written afresh: only the
                                           data its arrays reference (edits above
                                           leave the source's skeleton, keys and
@@ -130,7 +130,7 @@ def mark_body_joints(model: bytes, body_crcs) -> bytes:
     `body_crcs`) AND is weighted or the ancestor of a weighted bone; cleared
     on every other bone. wow.exe never tests bit 31 of a bone's flags (the M2
     animation code 0x00820000..0x00840000 tests only the low byte), so the
-    mark changes nothing for the client; the DLL binds marked bones to the
+    mark changes nothing for the client; a client mod binds marked bones to the
     skeleton that wears the garment (spec 2026-10-09 runtime-bound garments)."""
     m = bytearray(model)
     nb, ob = _arr(m, H_BONES)
@@ -281,7 +281,7 @@ def compact(model: bytes, skin: bytes):
 
 
 def single_bone(model: bytes, skin: bytes):
-    """Everything on bone 0, one bone, one-entry palette (realm Collections
+    """Everything on bone 0, one bone, one-entry palette (per-limb piece
     format: the attachment point's joint moves the whole piece)."""
     m = bytearray(model)
     nb, ob = _arr(m, H_BONES)

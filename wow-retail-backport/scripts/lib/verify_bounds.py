@@ -28,12 +28,12 @@ CHECKED BY THE CLIENT - listed so the difference is on the record:
   0x0081f5b7  transform index against texture_transforms.count
   0x00821ead  batch.colorIndex against colors.count
 
-Run:  python tools/verify/verify_bounds.py
+Used by: gates.py (bp.py audit)
 """
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 import collections, glob, os, struct, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -101,7 +101,7 @@ def check(rel, d, skins, bad, notes, tot, honour_level=False):
     """Every unchecked cross-reference of one model and its skins.
 
     `honour_level`: a submesh's index start is word +8 OR (word +2 << 16) -
-    true only for models drawn through the DLL's index-start patch (the races
+    true only for models drawn through a client mod's index-start patch (the races
     pack); every other model is checked exactly as the stock client reads it.
     """
     def fail(rel, kind, msg):

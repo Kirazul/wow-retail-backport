@@ -21,7 +21,7 @@ sites this module declares. `audit()` proves exactly that, per file.
 
 WHAT MAKES THAT POSSIBLE - ALL OF IT MEASURED, NONE OF IT REMEMBERED
 --------------------------------------------------------------------
-Measured over the 141 retail models this pack ships and 399 WotLK models plus
+Measured over the 141 retail models the measured set ships and 399 WotLK models plus
 410 WotLK skins read out of the client's own MPQs:
 
  1. NO retail model here sets global flag 0x8, so its header is 304 bytes -
@@ -77,7 +77,7 @@ USAGE
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import struct
 
@@ -129,7 +129,7 @@ GF_NEW_PARTICLE = 0x200       # would make the emitter record bigger again
 # 0.17% and 0.02% - and the flag VALUES it ships are 0x00, 0x10, 0x04, 0x11,
 # 0x15, 0x01, 0x13, 0x17 and 0x14. Not one common value has a bit above 0x1F.
 #
-# Retail is the opposite: 303 of the 572 materials in this pack set 0x40, so
+# Retail is the opposite: 303 of the 572 materials in the measured set set 0x40, so
 # 53% of everything we ship was carrying a bit the client sees in 0.17% of its
 # own art. In Cataclysm 0x40 and 0x80 became shadow-batch flags, and 3.3.5 has
 # no shadow batches - it has whatever those bits meant in 264, applied to half
@@ -150,7 +150,7 @@ GF_NEW_PARTICLE = 0x200       # would make the emitter record bigger again
 #                        nought lights, i.e. "do not light this material"
 #
 # The old 0x1F mask threw 0x20 and 0x100 away. 0x100 alone was on 250 of the
-# 572 materials in this pack, every one of them an effect retail authored as
+# 572 materials in the measured set, every one of them an effect retail authored as
 # self-lit, and we were handing them to the lighting path.
 #
 # 0x40 and 0x80 stay masked off: nothing in the client reads them, and in
@@ -163,7 +163,7 @@ TEXTURE_FLAG_MASK = 0x3
 
 # blending_mode 7 is Cataclysm's BlendAdd, which 3.3.5 has no case for. What it
 # becomes is NOT a judgement call, because Blizzard shipped the answer: 29 of
-# the assets this pack uses exist in retail AND in the 3.3.5 client, the same
+# the assets the measured set uses exist in retail AND in the 3.3.5 client, the same
 # art authored twice. Comparing 71 emitters that pair up one to one:
 #
 #     retail blend 2 -> client 2   (x11)
@@ -207,7 +207,7 @@ TEXTURE_FLAG_MASK = 0x3
 # is behind it. Add throws it away, so a bright texel adds at full strength
 # and nothing ever attenuates: the soft falloff disappears and the quad
 # saturates to white with its polygon edge showing. That is exactly the
-# failure this pack shows, on the 49 models (29%) and 27 hearthstones (63%)
+# failure the measured set shows, on the 49 models (29%) and 27 effect assets (63%)
 # that carry a mode 7 material. Alpha keeps the falloff and the occlusion; it
 # multiplies premultiplied colour by alpha a second time, so it reads slightly
 # darker than retail, which is far closer than a blown-out white.
@@ -393,7 +393,7 @@ def port_skin(raw: bytes, stats: dict):
     shader name from those two bits: Diffuse_T1_T2, Diffuse_T1_Env,
     Diffuse_Env_T2, Diffuse_Env_Env.
 
-    Retail uses the identical encoding. The census of this pack turns up op
+    Retail uses the identical encoding. The census of the measured set turns up op
     values 0, 1, 3, 4, 6 and 9 - and 9 is 8|1, the env bit over Mod, which
     only decodes to anything sane under exactly this scheme.
 
@@ -888,7 +888,7 @@ def port(raw: bytes, texture_paths=None, skins=None,
             # 581 packs three texture indices into 0x16 that are all inside
             # the model's own texture array - 581 of 581. Stripping the flag
             # and masking 0x16 down to & 0x1F threw two of the three layers
-            # away on two thirds of every emitter in this pack.
+            # away on two thirds of every emitter in the measured set.
             #
             # And 0x80000000 is not a post-WotLK bit either; the client sets
             # it 55 times. The only bit neither build ever sets is 0x01000000.
@@ -954,7 +954,7 @@ def port(raw: bytes, texture_paths=None, skins=None,
     # emitter whose SIZE differs, and unlike the emitter it cannot be
     # compacted in place, because the sixteen bytes are not at the tail. Nine
     # cameras across five of these models would otherwise be walked at the
-    # wrong stride by the client. No spell visual in this pack is filmed by
+    # wrong stride by the client. No spell visual in the measured set is filmed by
     # its own camera, so the array goes to zero and the lookup with it.
     for at in (H_CAMERAS, H_CAMERA_LOOKUP):
         cnt, _ = _arr(body, at)
@@ -1030,7 +1030,7 @@ def port(raw: bytes, texture_paths=None, skins=None,
     # It is null whenever M2Texture.type is non-zero (the client is supposed
     # to supply that one - a skin, hair, an item - and nothing supplies a
     # texture to a spell visual) or the TXID entry is 0 and there is no name.
-    # Corewarden's cast model is the one asset in this pack that does it:
+    # Corewarden's cast model is the one asset in the measured set that does it:
     # texture 30 is type 1 with TXID 0, and batch 9 - the 25-vertex burst in
     # the middle of the void orb - binds it as its second layer.
     n_tex, o_tex = _arr(body, H_TEXTURES)
@@ -1140,7 +1140,7 @@ def port(raw: bytes, texture_paths=None, skins=None,
     # two parallel lookups appended after. A two-layer batch reads its texture
     # UNIT out of the first and its COMBINE MODE out of the second, with the
     # same index - which is how the client's own models are built, and without
-    # which the second layer of all 1,367 two-layer batches in this pack drew
+    # which the second layer of all 1,367 two-layer batches in the measured set drew
     # opaque.
     body = make_room(body, HDR_LONG - HDR_SHORT)
     flags = _u32(body, H_GLOBAL_FLAGS) | GF_COMBINER_COMBOS

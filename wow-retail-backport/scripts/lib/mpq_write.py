@@ -3,7 +3,7 @@ mpq_write.py - write an MPQ archive the 3.3.5a client will read.
 
 WHY WRITE AN ARCHIVE RATHER THAN HOOK THE FILE SYSTEM
 -----------------------------------------------------
-The wardrobe needs the client to load models it does not ship. The obvious move
+A patch needs the client to load models it does not ship. The obvious move
 is to hook the file layer and serve the bytes ourselves. Don't: in 3.3.5a model
 and texture loading happens on worker threads, so that hook has to be re-entrant
 and thread-safe forever, and every mistake in it is a crash in someone else's
@@ -34,7 +34,7 @@ lists correctly, and returns corrupt bytes.
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import struct
 import zlib

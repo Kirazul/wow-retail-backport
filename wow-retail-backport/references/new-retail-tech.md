@@ -24,7 +24,11 @@ blend values the converter documents) merged with `W/reports/known_tech.json`
 | anim / skel chunks | AFM2 AFSB / SKL1 SKA1 SKB1 SKS1 SKPD AFID BFID |
 | db2.<Table> | every column of every table the kit reads |
 
-## When it stops you
+## When it finds something new: uncover it fully, then support it
+
+The build waits so nothing is converted wrong - the work goes on until the
+new feature is understood and supported. Never skip it, never build around it,
+never leave it as "unknown": every new item ends as a measured rule with a test.
 
 1. List what is new (`reports/newtech.json` has examples: file ids).
 2. Look at one example: `convert-model` it (it may fail - that is information),

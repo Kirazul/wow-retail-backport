@@ -47,9 +47,12 @@ You never edit an output file by hand and never guess a rule.
    game was broken more than once.
 7. **Look at every sheet picture** before saying anything looks right. Never
    claim you looked when you did not.
-8. **When `newtech` stops you, stop.** Retail added something this kit has not
-   measured. Research it (references/new-retail-tech.md), add the rule + a
-   test, then continue.
+8. **When `newtech` finds something new, uncover it fully - never skip it.**
+   The build pauses so nothing is converted wrong; your job is then to find
+   out exactly what the new retail feature does and support it (convert, bake,
+   or a reported hard limit with its measured reason) with a rule + a test,
+   then continue (references/new-retail-tech.md). Never drop it silently,
+   never build around it, never give up on an issue: every issue gets solved.
 9. Do not deploy, publish or touch the user's game or server unasked. Hand
    over `out/` and `out/INSTALL.txt`.
 10. Heavy work one step at a time; every step is resumable - re-running it
@@ -88,7 +91,7 @@ step:
 | 4 | `find --work W "name"` | search retail sets and items by name | ids listed | try a shorter word |
 | 5 | `select --work W --set ID [--family] --item ID --display ID --expansion ID` | resolves what to port to displays + every file they name | `selection: N sets, M displays {...}` | an unknown id: check it with `find` |
 | 6 | `fetch --work W` | downloads every needed retail file (resumable; failures retried one by one) | `0 failed` | run again; then the fallbacks in pipeline.md step 6 (fewer workers, wait for wago, wow.export from a retail install at the SAME build); encrypted = unreleased, reported, not shipped |
-| 7 | `newtech --work W` | stops on anything retail uses that the kit never measured | `PASS - nothing ... is new` | STOP: references/new-retail-tech.md |
+| 7 | `newtech --work W` | stops on anything retail uses that the kit never measured | `PASS - nothing ... is new` | uncover and support it: references/new-retail-tech.md |
 | 8 | `measure --work W` | helm placement per body + body geoset remap, for THIS client | every playable body `measured` | `estimated`/`UNKNOWN` bodies: look at their sheets, bodies-and-races.md |
 | 9 | `build --work W [--extension]` | converts everything (Tier 1; `--extension` also exports Tier 2 pieces) | `N built, 0 errors` | errors grouped by cause: troubleshooting.md |
 | 10 | `tables --work W` | DBC rows (client + server) + item_template SQL, stable ids | `tables: N displays, N items` | - |
@@ -145,14 +148,16 @@ per display, what a stock client cannot show - tell the user.
 - Never delete a gate or loosen a threshold to make a build pass. If a gate
   is wrong, prove it wrong with a measurement and record that in rules.md.
 
-## When newtech stops you
+## When newtech finds something new
 
-Do not build. For each NEW item it prints: find the files it named, read
-wowdev.wiki (M2 / BLP / DB2 pages) and the wow.export or WoW Model Viewer
-source for that feature, decide what 3.3.5 can do with it (convert, bake,
-drop with a report), write the rule + a test, run `newtech --learn` so the
-registry knows it, and only then continue. Full procedure:
-references/new-retail-tech.md.
+The build waits; the work does not. For each NEW item: find the files it
+named, take one apart (`convert-model`, `phys`, a hex view), read wowdev.wiki
+(M2 / BLP / DB2 / PHYS pages) and the wow.export or WoW Model Viewer source
+for that feature, and MEASURE what it does on real files. Then support it -
+convert it, bake it, or (only when 3.3.5 truly has nothing equivalent) drop it
+with a measured reason in rules.md and a line in the build report - with a
+failing test first, then the code, then `newtech --learn`, `selftest`, and the
+pipeline again from step 7. Full procedure: references/new-retail-tech.md.
 
 ## Symptom -> cause -> where it is handled
 

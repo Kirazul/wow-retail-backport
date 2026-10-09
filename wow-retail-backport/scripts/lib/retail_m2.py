@@ -12,14 +12,14 @@ Retail splits what a 3.3.5 client reads as ONE file across several:
     .anim   AFM2 (keyframe data) and, when the skeleton is shared, AFSA / AFSB
 
 Nothing here interprets geometry; it only splits a file into its chunks and
-decodes the ones that name other files. The converter (races_m2.py) consumes
+decodes the ones that name other files. The converters consume
 the payloads.
 """
 
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import struct
 

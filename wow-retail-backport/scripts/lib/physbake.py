@@ -23,8 +23,7 @@ WHAT IS SIMULATED (retail's constants, the universal-modder notes + wowdev PHYS)
 WHAT DRIVES IT
   The kinematic root follows the model's own animation of its bone, carried
   by the motion of the attachment point it hangs on during a real retail
-  character's Stand animation (Human male, our 1:1 conversion of retail's
-  body), time-scaled onto the model's own Stand loop so the bake loops. The
+  character's Stand animation, time-scaled onto the model's own Stand loop so the bake loops. The
   bake records the last of several warm-up loops (settled, periodic), and the
   first and last keys meet.
 
@@ -188,7 +187,7 @@ class Body:
         self.damp = d if d > 0 else DEFAULT_DAMP
         d = rec.get("angdrag", 0.0) or 0.0
         self.adamp = d if d > 0 else DEFAULT_DAMP
-        self.gscale = rec.get("gravity", 1.0)       # BDY3+ 0x18 (midnight_phys)
+        self.gscale = rec.get("gravity", 1.0)       # BDY3+ 0x18 (physread)
 
     def com(self):
         return self.x + qrot(self.q, self.com_local)

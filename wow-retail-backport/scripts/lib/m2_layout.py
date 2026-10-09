@@ -3,7 +3,7 @@ m2_layout.py - proving an M2's struct sizes against the file itself.
 
 WHY THIS EXISTS
 ---------------
-The first conversion of the hearthstone art shipped with M2Sequence declared as
+A first converter once shipped with M2Sequence declared as
 28 bytes. It is 64. Every model in the pack was therefore written with sequence
 records less than half the size the client reads, so the client took each
 animation's duration, flags and bounding box out of the middle of its
@@ -31,14 +31,13 @@ Run over 141 real files this pins every size exactly. It runs as part of the
 conversion, on the input and again on the output, so a size that is wrong
 stops the build instead of shipping.
 
-    python tools/lib/m2_layout.py --tree re/out/hearth/art
-    python tools/lib/m2_layout.py --file <x.m2> --verbose
+    python scripts/lib/m2_layout.py --file <x.m2> --verbose
 """
 
 from __future__ import annotations
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
-import _toolpath  # noqa: E402,F401  (every tools/ folder and re/ on sys.path)
+import _toolpath  # noqa: E402,F401  (puts scripts/lib on sys.path)
 
 import argparse
 import os

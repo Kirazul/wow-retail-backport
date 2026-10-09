@@ -1,6 +1,6 @@
-"""Regression tests for midnight_physbake.py (retail .phys settled offline).
+"""Regression tests for physbake.py (retail .phys settled offline).
 
-    python -m unittest tools/tests/midnight_physbake_test.py      (from the repo root)
+    python bp.py selftest
 
 Every angular constraint must move a joint TOWARDS its target: a correction of
 the wrong sign is an anti-spring, and a chain held by one explodes (the weld
