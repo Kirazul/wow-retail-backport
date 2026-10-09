@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+
+# never commit a project folder, retail files, tables or built archives
+*.MPQ
+*.mpq
+*.blp
+*.m2
+*.skin
+*.anim
+*.dbc
+bp.json
+cache/
+db2/
+build/
+out/
+sheets/
+reports/
+logs/
+listfile.csv
