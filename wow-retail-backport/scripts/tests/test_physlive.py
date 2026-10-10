@@ -241,5 +241,170 @@ class Motion(unittest.TestCase):
             self.assertTrue(all(np.isfinite(v).all() for v in out.values()))
 
 
+def tassel():
+    """A retail-damped 2-link tassel (a raid helm's: gravity 0.75, damping
+    5 / s, angular 8 / s, 60 deg cones) hanging from the root."""
+    phys = chain(cone_deg=60.0, links=2)
+    for b in phys["bodies"][1:]:
+        b.update(gravity=0.75, drag=5.0, angdrag=8.0)
+    return phys
+
+
+def yaw(deg):
+    a = math.radians(deg)
+    return np.array([[math.cos(a), -math.sin(a), 0], [math.sin(a), math.cos(a), 0], [0, 0, 1.0]])
+
+
+def swing(model, M, rest):
+    """Degrees between the tip's direction from the root now and at rest,
+    both in the root's frame."""
+    b = model.bodies[-1]
+    tip = b.x + R.PB.qrot(b.q, np.array([0, 0, -0.1]))
+    d = M[:3, :3].T @ (tip - M[:3, 3])
+    return math.degrees(math.acos(max(-1.0, min(1.0, float(d @ rest) / (np.linalg.norm(d) * np.linalg.norm(rest))))))
+
+
+def rest_dir(model, M):
+    b = model.bodies[-1]
+    tip = b.x + R.PB.qrot(b.q, np.array([0, 0, -0.1]))
+    return M[:3, :3].T @ (tip - M[:3, 3])
+
+
+def drive(model, root_at, t0, t1, dt=DT, rest=None):
+    """Step from t0 to t1; with `rest`, the swing after every frame."""
+    out, t = [], t0
+    while t < t1 - 1e-9:
+        t += dt
+        M = root_at(t)
+        model.step({b: M for b in model.bones()}, dt)
+        if rest is not None:
+            out.append(swing(model, M, rest))
+    return out
+
+
+class Locomotion(unittest.TestCase):
+    """The wearer's own travel (run, jump, turn) through the world: steady
+    travel moves nothing, a change of it is felt as a short bounded swing -
+    the item rides its wearer, it is never dragged through the air."""
+
+    def settled(self, root_at=lambda t: frame()):
+        m = R.Model(tassel())
+        drive(m, root_at, 0.0, 5.0)
+        return m, rest_dir(m, root_at(5.0))
+
+    def test_steady_run_leaves_the_item_at_rest(self):
+        m, rest = self.settled()
+        run7 = lambda t: frame(t=(7.0 * max(t - 5.0, 0.0), 0, 0))
+        drive(m, run7, 5.0, 9.0)
+        self.assertLess(swing(m, run7(9.0), rest), 0.5)
+
+    def test_run_start_and_stop_swing_is_short_and_bounded(self):
+        m, rest = self.settled()
+        run = lambda t: frame(t=(7.0 * min(max(t - 5.0, 0.0), 2.0), 0, 0))     # 2 s at 7 yd/s
+        start = drive(m, run, 5.0, 7.0, rest=rest)
+        stop = drive(m, run, 7.0, 10.0, rest=rest)
+        for s in (start, stop):
+            self.assertGreater(max(s), 3.0)          # it reacts
+            self.assertLess(max(s), 30.0)            # it is not flung
+        self.assertLess(start[-1], 0.5)              # settled while still running
+        self.assertLess(stop[-1], 0.5)
+
+    def test_wow_jump_does_not_throw_the_item_over(self):
+        m, rest = self.settled()
+        v0, g = 7.96, 19.29                          # wow.exe jump: 7.96 yd/s up, 19.29 yd/s^2
+        air = 2 * v0 / g
+
+        def jump(t):
+            u = t - 5.0
+            return frame(t=(0, 0, v0 * u - 0.5 * g * u * u if 0.0 <= u <= air else 0.0))
+        s = drive(m, jump, 5.0, 8.0, rest=rest)
+        self.assertLess(max(s), 45.0)
+        self.assertLess(s[-1], 0.5)
+
+    @staticmethod
+    def on_shoulder(deg):
+        """The root on a shoulder 0.3 yd off the wearer's turning axis."""
+        M = np.eye(4)
+        M[:3, :3] = yaw(deg)
+        M[:3, 3] = yaw(deg) @ np.array([0.3, 0.0, 0.0])
+        return M
+
+    def test_snap_turn_is_bounded(self):
+        m, rest = self.settled(lambda t: self.on_shoulder(0.0))
+        turn = lambda t: self.on_shoulder(180.0 if t > 5.0 + 0.5 * DT else 0.0)
+        s = drive(m, turn, 5.0, 8.0, rest=rest)
+        self.assertLess(max(s), 30.0)
+        self.assertLess(s[-1], 0.5)
+
+    def test_steady_turn_holds_a_steady_bounded_lean(self):
+        # a shoulder tassel 0.3 yd off the axis of a 180 deg/s keyboard turn
+        # leans out by the centrifugal pull (w^2 r = 2.96 yd/s^2), felt up to
+        # the sustained bound INERTIA_SPEED / VEL_WINDOW (2.5 yd/s^2):
+        # atan(2.5 / 7.5) = 18.4 deg; it holds that lean still, never winds up
+        m, rest = self.settled(lambda t: self.on_shoulder(0.0))
+        spin = lambda t: self.on_shoulder(180.0 * max(t - 5.0, 0.0))          # 180 deg / s
+        s = drive(m, spin, 5.0, 9.0, rest=rest)
+        self.assertLess(max(s), 30.0)
+        self.assertLess(max(s[-60:]) - min(s[-60:]), 0.5)
+        lean = math.degrees(math.atan(min(math.pi ** 2 * 0.3, R.INERTIA_SPEED / R.VEL_WINDOW) / 7.5))
+        self.assertAlmostEqual(s[-1], lean, delta=3.0)
+
+    def test_steady_run_on_a_jittery_clock_stays_still(self):
+        # the game moves the wearer by ITS frame time (whole ms, read at another
+        # moment of the frame), the solver times frames by its own clock: a
+        # 1 ms disagreement is a 6% speed error frame to frame - felt as a
+        # travel change it shook a running tassel 17 deg, 7 mm a frame
+        m, rest = self.settled()
+        rng = np.random.default_rng(1)
+        x, game, sw, tips = 0.0, 1.0 / 60, [], []
+        for k in range(600):
+            dt = 1.0 / 60 + rng.normal(0, 0.001)
+            x += 7.0 * game                       # moved by LAST frame's time
+            game = dt
+            M = frame(t=(x, 0, 0))
+            m.step({b: M for b in m.bones()}, dt)
+            if k > 120:
+                b = m.bodies[-1]
+                tips.append(b.x + R.PB.qrot(b.q, np.array([0, 0, -0.1])) - M[:3, 3])
+                sw.append(swing(m, M, rest))
+        self.assertLess(max(sw), 2.0)
+        self.assertLess(float(np.max(np.linalg.norm(np.diff(np.array(tips), axis=0), axis=1))), 5e-4)
+
+    def test_fast_mount_on_a_jittery_clock_stays_still(self):
+        # the noise grows with speed: a 30 yd/s flying mount, 1 ms disagreement
+        m, rest = self.settled()
+        rng = np.random.default_rng(2)
+        x, game, sw = 0.0, 1.0 / 60, []
+        for k in range(600):
+            dt = 1.0 / 60 + rng.normal(0, 0.001)
+            x += 30.0 * game
+            game = dt
+            M = frame(t=(x, 0, 0))
+            m.step({b: M for b in m.bones()}, dt)
+            if k > 120:
+                sw.append(swing(m, M, rest))
+        self.assertLess(max(sw), 2.0)
+
+    def test_running_sway_still_swings_the_item(self):
+        # a run's side-to-side sway (3 cm at the 1.25 Hz stride) is real motion
+        # of the root, across the travel: felt (a hanging tassel cannot swing
+        # from an up-down bob - that only pulls along it)
+        m, rest = self.settled()
+        bob = lambda t: frame(t=(7.0 * max(t - 5.0, 0.0), 0.03 * math.sin(2 * math.pi * 1.25 * max(t - 5.0, 0.0)), 0))
+        s = drive(m, bob, 5.0, 9.0, rest=rest)
+        self.assertGreater(max(s[-60:]), 2.0)
+        self.assertLess(max(s), 30.0)
+
+    def test_run_start_swing_does_not_depend_on_frame_rate(self):
+        peaks = []
+        for dt in (1.0 / 60, 1.0 / 144, 1.0 / 30):
+            m = R.Model(tassel())
+            drive(m, lambda t: frame(), 0.0, 5.0, dt)
+            rest = rest_dir(m, frame())
+            run = lambda t: frame(t=(7.0 * max(t - 5.0, 0.0), 0, 0))
+            peaks.append(max(drive(m, run, 5.0, 6.0, dt, rest=rest)))
+        self.assertLess(max(peaks) - min(peaks), 0.15 * max(peaks))
+
+
 if __name__ == "__main__":
     unittest.main()

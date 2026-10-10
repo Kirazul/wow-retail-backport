@@ -137,6 +137,8 @@ from most to least faithful:
 | Rule | Why |
 |---|---|
 | Simulate in the WORLD: bone matrix (model-bind -> camera-relative in 3.3.5a) x the scene's camera-to-world matrix (`scene(CM2Model+0x28) + 0xC4`, `GetAttachmentPosition` 0x00831858..0x00831881); write back through its inverse | simulated in the client's camera-relative space, turning the camera swings the cloth (the "moves with the camera" class) |
+| The item RIDES its wearer: every frame the dynamic bodies are first carried rigidly with the root (positions, orientations, velocities), so steady running, turning, flying move nothing and DAMPING ACTS RELATIVE TO THE WEARER; a CHANGE of the root's velocity / spin is felt as inertia: at most 0.5 yd/s (2 rad/s) of it within 0.2 s, released at 5 yd/s^2 (20 rad/s^2), frame-rate independent - a sustained change (a jump arc, a turn's centripetal pull) is felt up to 2.5 yd/s^2 | damping on WORLD velocity (retail's .phys damping is 3..12 / s) dragged a tassel 70 deg back at a steady 7 yd/s run, flung it 90 deg at the start and moved real items up to 40 yd/s relative to the wearer (now <= 2.3); WoW's travel changes are instant (0 -> 7 yd/s in one frame, a 19.3 yd/s^2 jump arc, mouse snaps). The .phys has no locomotion fields (BDY4 0x1C / 0x28 sit on kinematic roots too): the bounds are the engine's, as Unreal AnimDynamics / Havok local-space ragdolls bound them |
+| TIME and TRAVEL: the frame's time is the SCENE's clock (`scene + 0x0C`, ms, advanced once a frame by CM2Scene::AdvanceTime 0x0081C9C0; the world scene's from 0x007F0B8C), so a second bone build in one frame takes 0 s; the root's travel is measured over 0.2 s and a change ALONG it is felt only past 0.1 yd/s + 3 % of the speed (hysteresis) - turns, jumps and sway (across it) pass whole | the game moves the wearer by ITS frame time: timed by a clock read mid-render, a 1 ms disagreement felt as a travel change shook a running tassel 17 deg (7 mm a frame); a clock disagreement only RESCALES the travel, never turns it. Measured: 0.04 deg, 0 mm at 1 ms disagreement, 7 and 30 yd/s |
 | Kinematic bodies follow their bones (interpolated over the frame); dynamic bodies REPLACE their bones; every bone UNDER a dynamic bone is carried by its parent's delta (`B'c = Bc x Bp^-1 x B'p`; parents may come after children) | plume tips, glow cards and chain ends are child bones of the physics bones |
 | Bodies a joint connects never collide (Box2D `collideConnected = false`, PhysX / Havok defaults) | retail AUTHORS overlaps there: a raid helm's plume link sits 13 cm inside its 18 cm shell; colliding them tore the plume 6-8 cm off its joint |
 | Contacts: dynamic capsules against the kinematic bodies' capsules of the same model (a sphere = a zero-length capsule, a box or hull = its bounding capsule along its main axis), the dynamic one pushed out to touch | the stand-ins are the item's own kinematic shapes; retail characters carry no .phys |
@@ -145,7 +147,7 @@ from most to least faithful:
 | Gravity (0, 0, -10) yd/s^2 x the body's signed scale, simulated in world / s for a model scaled s | shapes keep their authored size on a scaled model; floating links (scale < 0) rise |
 | RESET to the client's own bone poses on the first frame, a gap > 0.25 s, a root jump > 4 yd, a scale change, any non-finite value | loading, alt-tab, teleports, mounts: never an explosion |
 | Data per SHIPPED file: the .phys digested (mass, centre of mass, inertia and inverse from the shapes, capsules, orthonormal joint frames, limits, motors) + that file's pivot shift | 1,368 shipped files from 304 .phys: every converted file keeps retail's bone list and parents; pivots move by ONE uniform shift (a helm placement shift) - body origins move by it, joint frames do not |
-| SLEEP: a model whose every body point stays inside a 3 mm box (on its root) for 0.5 s stops being stepped and holds that pose exactly; any kinematic body faster than 5 cm/s or 3 deg/s wakes it | Box2D sleeps below 1 cm/s for 0.5 s (a 5 mm box); 3 mm settles the last unconverged-joint flicker (a hinge on its limit: 1.35 mm at 2 iterations, 0.43 at 4) and the 2-3 mm/s slide of a chain wedged in its cone-and-twist limit corner, while any swing over 1.5 mm keeps swinging; a standing wearer's items cost ~0.5 us a frame |
+| SLEEP: a model whose every body point stays inside a 3 mm box (on its root) for 0.5 s stops being stepped and holds that pose exactly; it wakes on what it would feel: a pending inertia push over 5 cm/s (or 3 deg/s; the WHOLE pending push - one frame's share at 144 fps is under it), its root tilting against gravity faster than 3 deg/s, another kinematic body moving on the root faster than 5 cm/s - a steady run asleep costs nothing | Box2D sleeps below 1 cm/s for 0.5 s (a 5 mm box); 3 mm settles the last unconverged-joint flicker (a hinge on its limit: 1.35 mm at 2 iterations, 0.43 at 4) and the 2-3 mm/s slide of a chain wedged in its cone-and-twist limit corner, while any swing over 1.5 mm keeps swinging; a standing wearer's items cost ~0.5 us a frame |
 | A chain balanced high on its cone rims ROLLS OFF slowly under retail's heavy angular damping (10 / s) - up to ~160 s, its gravity energy falling the whole time (24.264 -> 24.021 on a Void Elf mail helm), then dead still: physics, not a fault. The gate's test for a solver fault is ENERGY: a damped chain on a still wearer that moves while its gravity energy does not fall is being fed by the solver | measured: no energy is ever gained; a combined swing-twist limit and an own-axis twist correction both changed nothing, so the separate cone + twist limits stay |
 | Cost ~19.5 us per moving item per frame (median 15, worst 54), ~0.5 us asleep (all 1,368 measured); a per-frame budget (0.25 ms): past it items step every 2^L frames and ride RIGIDLY with the root between (missed time caught up) | zero FPS drop in crowded places; no pop, no stretch |
 
@@ -163,13 +165,16 @@ self-reset, joints closed <= 2 mm at rest, nothing resting inside a shape it
 may touch, at rest at the end of each stand (flicker <= 0.5 mm - half a pixel
 1 m from the camera at 1080p - drift <= 1 mm), asleep, or still sliding
 downhill (gravity energy falling over the last 10 s), no body farther from
-the root than its chain. Then the user's in-game
+the root than its chain, never FLUNG (<= 4 yd/s relative to the wearer while
+it runs, jumps and turns). A reference in Python must add as the mod does
+(plain left-to-right loops: Python 3.12+ `sum()` compensates, and six 1/30 s
+frames then reach the 0.2 s window edge on the other side of a C++ port). Then the user's in-game
 check: plumes droop and swing, ribbons and chains follow walking, running and
 jumping; turning the camera moves nothing.
 
 Never bake a settle into shipped models without comparing it with retail;
 never simulate in the client's camera-relative space; never collide joined
-bodies.
+bodies; never damp world velocity; never time a frame by a clock read mid-render.
 
 ## 7. Geosets, slots, helms
 

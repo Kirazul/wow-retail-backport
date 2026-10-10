@@ -104,13 +104,19 @@ rule's evidence):
    the bones and their parents (shared M2 header at `CM2Shared + 0x150`: +0x2C
    count, +0x30 bones, stride 0x58, parent int16 at +0x08), every read and
    write behind an exception guard.
-3. WORLD SPACE: world = bone x `scene(CM2Model + 0x28) + 0xC4` (row-vector);
-   simulate there (physlive.Model.step), write each dynamic body's bone back
-   through that matrix's inverse, carry every descendant bone by its parent's
-   delta.
+3. WORLD SPACE: world = bone x `scene(CM2Model + 0x28) + 0xC4` (row-vector;
+   CM2Scene 0x00821A20 rebuilds it from this frame's camera before any bone
+   build); simulate there (physlive.Model.step: the item rides its wearer, a
+   travel change is felt as bounded inertia), write each dynamic body's bone
+   back through that matrix's inverse, carry every descendant bone by its
+   parent's delta.
 4. STATE per model instance (keyed by the model, re-made when its shared
-   asset changes), forgotten when unseen for 2 s; time from a high-resolution
-   clock; the resets of rules.md section 6.
+   asset changes), forgotten when unseen for 2 s; the frame's time from the
+   SCENE's clock (`scene + 0x0C`, ms, CM2Scene::AdvanceTime 0x0081C9C0: the
+   game's own frame time - a clock read mid-render shook running items; a
+   second build in one frame takes 0 s; a scene whose clock stands still
+   falls back to a high-resolution clock after 0.1 s); the resets of rules.md
+   section 6.
 5. BUDGET: about 0.25 ms of physics a frame; past it a load level L makes each
    item step every 2^L frames on its own phase and ride rigidly with its root
    between (catching up the missed time, capped at 12 substeps). SLEEP (rules.md
