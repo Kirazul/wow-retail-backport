@@ -141,21 +141,29 @@ from most to least faithful:
 | Bodies a joint connects never collide (Box2D `collideConnected = false`, PhysX / Havok defaults) | retail AUTHORS overlaps there: a raid helm's plume link sits 13 cm inside its 18 cm shell; colliding them tore the plume 6-8 cm off its joint |
 | Contacts: dynamic capsules against the kinematic bodies' capsules of the same model (a sphere = a zero-length capsule, a box or hull = its bounding capsule along its main axis), the dynamic one pushed out to touch | the stand-ins are the item's own kinematic shapes; retail characters carry no .phys |
 | A position motor (mode 1) springs the joint to its frames' alignment at its Hz on the link's CENTRE-OF-MASS inertia, never past max torque | Box2D / Domino soft constraints: an 8 Hz motor sags 6 g / (w^2 L) = 13.7 deg on a 10 cm link; the measured raid plume rests 19 deg (base) and 78 deg (tip) from its bind pose instead of standing straight up |
-| Fixed substep h = 1/120 s, 2 iterations (motors and soft welds in the first), at most 6 substeps a frame | frame-rate independent; XPBD stays stable with 8 Hz motors |
+| Fixed substep h = 1/240 s, 4 iterations (motors and soft welds in the first), at most 12 substeps a frame; 4 iterations because 2 left a hinge resting on its limit flickering 1.35 mm (0.43 at 4; 8 costs twice as much for 0.15) | frame-rate independent; at 1/120 s a resting 3-link tassel flickered 0.85 mm frame to frame (unconverged joints return as velocity) - 0.03 mm at 1/240; smaller substeps beat more iterations (4 iterations: 0.19 mm) |
 | Gravity (0, 0, -10) yd/s^2 x the body's signed scale, simulated in world / s for a model scaled s | shapes keep their authored size on a scaled model; floating links (scale < 0) rise |
 | RESET to the client's own bone poses on the first frame, a gap > 0.25 s, a root jump > 4 yd, a scale change, any non-finite value | loading, alt-tab, teleports, mounts: never an explosion |
 | Data per SHIPPED file: the .phys digested (mass, centre of mass, inertia and inverse from the shapes, capsules, orthonormal joint frames, limits, motors) + that file's pivot shift | 1,368 shipped files from 304 .phys: every converted file keeps retail's bone list and parents; pivots move by ONE uniform shift (a helm placement shift) - body origins move by it, joint frames do not |
-| Cost ~6.5 us per item per frame (median 5, worst 19, all 1,368 measured); a per-frame budget (0.25 ms): past it items step every 2^L frames and ride RIGIDLY with the root between (missed time caught up) | zero FPS drop in crowded places; no pop, no stretch |
+| SLEEP: a model whose every body point stays inside a 3 mm box (on its root) for 0.5 s stops being stepped and holds that pose exactly; any kinematic body faster than 5 cm/s or 3 deg/s wakes it | Box2D sleeps below 1 cm/s for 0.5 s (a 5 mm box); 3 mm settles the last unconverged-joint flicker (a hinge on its limit: 1.35 mm at 2 iterations, 0.43 at 4) and the 2-3 mm/s slide of a chain wedged in its cone-and-twist limit corner, while any swing over 1.5 mm keeps swinging; a standing wearer's items cost ~0.5 us a frame |
+| A chain balanced high on its cone rims ROLLS OFF slowly under retail's heavy angular damping (10 / s) - up to ~160 s, its gravity energy falling the whole time (24.264 -> 24.021 on a Void Elf mail helm), then dead still: physics, not a fault. The gate's test for a solver fault is ENERGY: a damped chain on a still wearer that moves while its gravity energy does not fall is being fed by the solver | measured: no energy is ever gained; a combined swing-twist limit and an own-axis twist correction both changed nothing, so the separate cone + twist limits stay |
+| Cost ~19.5 us per moving item per frame (median 15, worst 54), ~0.5 us asleep (all 1,368 measured); a per-frame budget (0.25 ms): past it items step every 2^L frames and ride RIGIDLY with the root between (missed time caught up) | zero FPS drop in crowded places; no pop, no stretch |
 
 **Proof a mod must carry before it ships** (all done for the reference
 implementation): the mod's solver and `physlive.py` on the SAME data rows and
 the same frames (stand, run, jump, turn, stop, teleport, variable frame time,
 a scaled model) - identical within 1e-8 over each model's first second; after
-that the two drift only by rounding that a swinging chain amplifies SMOOTHLY
-(1e-12 -> 1e-9 -> mm over seconds, never a jump), held to < 1 cm. Then gate
-P1 over every setup: finite, no self-reset, joints closed <= 2 mm at rest,
-nothing resting inside a shape it may touch, every body at rest after a 6 s
-stand, no body farther from the root than its chain. Then the user's in-game
+that the two drift only by rounding that the motion amplifies SMOOTHLY (never a
+jump): running tassels are CHAOTIC - the reference itself carries a 1e-12 nudge
+to 6 cm in 4 s - so the late check is relative: no further from the reference
+than the reference strays from itself under a 1e-12 nudge over the run (x 2),
+never required below 1 cm. Then gate
+P1 over every setup (60 s stands around a run, jump and turn): finite, no
+self-reset, joints closed <= 2 mm at rest, nothing resting inside a shape it
+may touch, at rest at the end of each stand (flicker <= 0.5 mm - half a pixel
+1 m from the camera at 1080p - drift <= 1 mm), asleep, or still sliding
+downhill (gravity energy falling over the last 10 s), no body farther from
+the root than its chain. Then the user's in-game
 check: plumes droop and swing, ribbons and chains follow walking, running and
 jumping; turning the camera moves nothing.
 

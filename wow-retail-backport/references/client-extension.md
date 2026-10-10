@@ -113,8 +113,9 @@ rule's evidence):
    clock; the resets of rules.md section 6.
 5. BUDGET: about 0.25 ms of physics a frame; past it a load level L makes each
    item step every 2^L frames on its own phase and ride rigidly with its root
-   between (catching up the missed time, capped at 6 substeps). Measured cost
-   about 6.5 us per item per frame.
+   between (catching up the missed time, capped at 12 substeps). SLEEP (rules.md
+   section 6) makes a standing wearer's items nearly free. Measured cost about
+   19.5 us per moving item per frame, 0.5 us asleep.
 6. PROOF before shipping: the mod's solver against `physlive.py` on the same
    rows and frames (rules.md section 6 "Proof"), the glue (matrix round trip,
    descendant carry in either bone order, rigid carry), gate P1 over every

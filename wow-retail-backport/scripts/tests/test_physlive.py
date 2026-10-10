@@ -78,7 +78,7 @@ def tip_world(model):
 class Hanging(unittest.TestCase):
     def test_horizontal_chain_falls_and_rests_inside_its_cone(self):
         m = R.Model(chain(cone_deg=60.0, horizontal=True))
-        run(m, lambda t: frame(), 6.0)
+        run(m, lambda t: frame(), 10.0)      # retail's default damping 0.5 / s: speed ~ e^-0.5t
         for j in m.joints:
             A, B = j.axes()
             ang = math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(A[:, 2], B[:, 2]))))))
@@ -187,6 +187,50 @@ class Motion(unittest.TestCase):
         run(m, lambda t: frame(R3=rot_y(90.0)), 5.0)       # the model lies on its side
         d = R.PB.qrot(m.bodies[1].q, np.array([0, 0, -1.0]))  # the link's bind "down", now in world
         self.assertLess(d[2], -0.95)                         # still hangs down in the world
+
+    def test_settled_model_sleeps_exactly_still(self):
+        # at rest, a model stops being stepped (Box2D / PhysX / Havok sleep):
+        # it holds its averaged rest pose exactly - no solver flicker left
+        m = R.Model(chain(cone_deg=60.0, links=3))
+        run(m, lambda t: frame(), 30.0)
+        self.assertTrue(m.asleep)
+        a = m.step({b: frame() for b in m.bones()}, DT)
+        b = m.step({b: frame() for b in m.bones()}, DT)
+        for k in a:
+            np.testing.assert_array_equal(a[k], b[k])
+
+    def test_sleeping_model_rides_with_a_slow_root_and_wakes_on_motion(self):
+        m = R.Model(chain(cone_deg=80.0, links=2))
+        run(m, lambda t: frame(), 30.0)
+        self.assertTrue(m.asleep)
+        rel = np.linalg.inv(frame()) @ m.step({b: frame() for b in m.bones()}, DT)[2]
+        # breathing-slow drift of the root: still asleep, pose carried exactly
+        M = frame(t=(0.0005, 0.0, 0.0))
+        out = m.step({b: M for b in m.bones()}, DT)
+        self.assertTrue(m.asleep)
+        np.testing.assert_allclose(np.linalg.inv(M) @ out[2], rel, atol=1e-12)
+        # a real move wakes it, and the chain lags behind the root
+        lag = []
+        for k in range(30):
+            M = frame(t=(0.0005 + 0.1 * (k + 1), 0.0, 0.0))     # 6 yd/s
+            out = m.step({b: M for b in m.bones()}, DT)
+            lag.append(M[0, 3] - m.bodies[-1].x[0])
+        self.assertFalse(m.asleep)
+        self.assertGreater(max(lag), 0.02)
+
+    def test_a_slow_swing_never_sleeps(self):
+        # a lightly damped pendulum swinging ~8 mm must swing, not freeze
+        # (sleep may only ever settle what spans under its 3 mm box)
+        phys = chain(cone_deg=170.0, links=1)
+        phys["bodies"][1].update(drag=0.05, angdrag=0.05)
+        m = R.Model(phys)
+        run(m, lambda t: frame(), 0.2)                  # awake: too early to sleep
+        self.assertFalse(m.asleep)
+        b = m.bodies[1]
+        b.w = np.array([0.0, 3.0, 0.0])               # a push: ~8 mm swing at the tip
+        for _ in range(int(3.0 / DT)):
+            m.step({x: frame() for x in m.bones()}, DT)
+            self.assertFalse(m.asleep)
 
     def test_jitter_stays_finite(self):
         m = R.Model(chain(cone_deg=60.0, links=3, motor={"max": 50.0, "mode": 1, "freq": 4.0, "damp": 0.5}))

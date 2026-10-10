@@ -171,7 +171,7 @@ Nothing about races or bodies is hard-coded:
   build - the audit must catch every one.
 - **`newtech`**: compares every retail file against a registry of what the kit has measured; a new
   chunk, flag, blend mode, texture type or table column stops the run before it is converted wrong.
-- **38 unit tests** (`selftest`), pinning rules that once broke items in game.
+- **41 unit tests** (`selftest`), pinning rules that once broke items in game.
 
 ## Physics
 
@@ -181,9 +181,9 @@ ships two tested XPBD solvers:
 
 - `physlive.py` - the LIVE reference: retail's bodies, joints, limits and motors stepped every
   frame from the wearer's real motion, in world space (the camera never moves cloth), joined
-  bodies never colliding, contacts against the item's own stand-in shapes, fixed 1/120 s substeps,
+  bodies never colliding, contacts against the item's own stand-in shapes, fixed 1/240 s substeps with 4 iterations, sleep at rest,
   safe resets. A client mod's solver is held to it value for value; the full contract (client
-  addresses, data row, budget at ~6.5 us per item, the proof to carry) is in
+  addresses, data row, budget at ~19.5 us per moving item, ~0.5 us asleep, the proof to carry) is in
   `references/client-extension.md` section 5, every rule's evidence in `references/rules.md`
   section 6.
 - `physbake.py` - offline rest-pose study tool (`phys <fdid> --settle`, `--survey`).

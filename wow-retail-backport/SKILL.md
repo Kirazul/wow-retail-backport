@@ -63,7 +63,7 @@ You never edit an output file by hand and never guess a rule.
 ```
 python --version                      # 3.11 or newer
 python -m pip install numpy pillow    # Pillow 11+ (DDS encoder); nothing else is needed
-python <skill>/scripts/bp.py selftest # must end with OK (38 tests; "skipped=2" is fine: those need retail files)
+python <skill>/scripts/bp.py selftest # must end with OK (41 tests; "skipped=2" is fine: those need retail files)
 ```
 `<skill>` is this skill's folder. `W` below is the project folder you choose
 (outside any git repo, e.g. `C:\backport\midnight`). Commands work in

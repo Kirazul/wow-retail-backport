@@ -7,24 +7,32 @@ for value (references/client-extension.md section 5; rules.md section 6).
     out = m.step({bone: 4x4 world matrix of that bone}, dt)   # every frame
           -> {dynamic bone: 4x4 world matrix}                  # what to draw
 
-A bone matrix is column form and maps a MODEL-BIND point to the world. A mod
-builds it from the client's bone matrix (camera-relative in 3.3.5a) and the
-scene's camera-to-world matrix, so the camera never moves anything. The model
-may be scaled (s = length of the root bone matrix's first column): the
-simulation runs in world / s, where every shape keeps its authored size and
-gravity is 10 / s.
+A bone matrix is column form and maps a MODEL-BIND point to the world (a mod
+builds it from the client's camera-relative bone matrix and the scene's
+camera-to-world matrix, so the camera never moves anything). The model may be
+scaled (s = length of the root bone matrix's first column): the simulation
+runs in world / s, where every shape keeps its authored size and gravity is
+10 / s.
 
-ONE SUBSTEP (h = 1/120 s; fixed, so the result does not depend on frame rate)
+ONE SUBSTEP (h = 1/240 s; fixed, so the result does not depend on frame rate)
   kinematic bodies: their bone pose, interpolated over the frame
   dynamic bodies: gravity x signed scale, gyroscopic term, damping, predict
-  ITERATIONS passes: every joint (physbake.Joint: motors and soft welds in
-  the first pass), then every contact
+  ITERATIONS passes: every joint (physbake.Joint: motors and soft
+  welds in the first pass), then every contact
   velocities from the positions
 CONTACTS each dynamic body's capsules against the kinematic bodies' capsules
   (a hull = its bounding capsule): the dynamic one is pushed out to touch.
   Bodies a joint connects never collide (retail authors overlaps there).
 RESET to the client's own bone poses (never an explosion): first frame, a gap
   over GAP, a root jump over JUMP yd, a scale change, a non-finite state.
+SLEEP (as Box2D / PhysX / Havok sleep, judged by position): a model whose
+  every body point stays inside a SLEEP_BOX box (relative to its root) for
+  SLEEP_TIME stops being stepped and holds its pose on the root exactly - no
+  solver flicker, no cost. A real swing spans its whole amplitude and never
+  sleeps (a speed threshold froze a 2.7 mm swing mid-air); what can freeze is
+  at most SLEEP_BOX / 2 off its rest (1.5 mm, about a pixel 1 m from the camera;
+  Box2D tolerates 5 mm). Any kinematic body moving
+  faster than WAKE_SPEED or turning faster than WAKE_TURN wakes it.
 """
 from __future__ import annotations
 
@@ -34,12 +42,16 @@ import numpy as np
 
 import physbake as PB
 
-H = 1.0 / 120
-ITERATIONS = 2
-MAX_SUBSTEPS = 6
+H = 1.0 / 240
+ITERATIONS = 4
+MAX_SUBSTEPS = 12
 GAP = 0.25           # s: a longer frame (loading, alt-tab, off screen) resets
 JUMP = 4.0           # yd: a root moving further in one frame teleported
 G = np.array([0.0, 0.0, -10.0])
+SLEEP_TIME = 0.5               # s at rest before sleeping (Box2D b2_timeToSleep)
+SLEEP_BOX = 0.003              # model units over SLEEP_TIME: under Box2D (1 cm/s x 0.5 s = 5 mm)
+WAKE_SPEED = 0.05              # model units / s of any kinematic body
+WAKE_TURN = math.radians(3.0)  # rad / s of any kinematic body
 
 
 def closest_seg_seg(p1, q1, p2, q2):
@@ -144,6 +156,13 @@ class Model:
         self.acc = 0.0
         self.scale = 1.0
         self.prev = None
+        self.asleep = False
+        self.rel = None
+        self._wake()
+
+    def _wake(self):
+        self.asleep = False
+        self.still, self.lo, self.hi = 0.0, None, None
 
     def bones(self) -> list:
         return sorted({b.bone for b in self.bodies})
@@ -159,6 +178,55 @@ class Model:
             b.v, b.w = np.zeros(3), np.zeros(3)
         self.prev = [(b.x.copy(), b.q.copy()) for b in self.bodies]
         self.scale, self.acc, self.live = s, 0.0, True
+        self._wake()
+
+    # -- sleep ---------------------------------------------------------------
+    def _rel(self, b):
+        """Body b's (x, q) in its root body's frame."""
+        r = self.bodies[self.root]
+        qc = PB.qconj(r.q)
+        return PB.qrot(qc, b.x - r.x), PB.qnorm(PB.qmul(qc, b.q))
+
+    def _probes(self):
+        out = []
+        for b in self.bodies:
+            if b.kin:
+                continue
+            x, q = self._rel(b)
+            out += [x, x + PB.qrot(q, b.com_local * 2)]
+        return np.array(out)
+
+    def _watch(self, dt):
+        """After a stepped frame: fall asleep once provably at rest - every
+        body point inside a SLEEP_BOX box for SLEEP_TIME."""
+        pr = self._probes()
+        if self.lo is None:
+            self.lo, self.hi, self.still = pr.copy(), pr.copy(), 0.0
+            return
+        lo, hi = np.minimum(self.lo, pr), np.maximum(self.hi, pr)
+        if float(np.max(np.linalg.norm(hi - lo, axis=1))) > SLEEP_BOX:
+            self.lo, self.hi, self.still = pr.copy(), pr.copy(), 0.0     # moving: the window restarts here
+            return
+        self.lo, self.hi = lo, hi
+        self.still += dt
+        if self.still >= SLEEP_TIME:
+            self.rel = [self._rel(b) for b in self.bodies]
+            for b in self.bodies:
+                b.v, b.w = np.zeros(3), np.zeros(3)
+            self.asleep = True
+
+    def _woken(self, cur, dt) -> bool:
+        if dt <= 0:
+            return False
+        for i, b in enumerate(self.bodies):
+            if not b.kin:
+                continue
+            (x0, q0), (x1, q1) = self.prev[i], cur[i]
+            dq = PB.qmul(q1, PB.qconj(q0))
+            ang = 2.0 * math.acos(min(1.0, abs(float(dq[0]))))
+            if np.linalg.norm(x1 - x0) > WAKE_SPEED * dt or ang > WAKE_TURN * dt:
+                return True
+        return False
 
     def _out(self, s):
         out = {}
@@ -183,6 +251,20 @@ class Model:
                 or np.linalg.norm(cur[self.root][0] - self.prev[self.root][0]) * s > JUMP):
             self.reset(kin, s)
             return self._out(s)
+        if self.asleep:
+            if not self._woken(cur, dt):
+                # held on the root exactly: no step, no flicker
+                for i, b in enumerate(self.bodies):
+                    b.x, b.q = cur[i][0].copy(), cur[i][1].copy()
+                r = self.bodies[self.root]
+                for i, b in enumerate(self.bodies):
+                    if not b.kin:
+                        x, q = self.rel[i]
+                        b.x = r.x + PB.qrot(r.q, x)
+                        b.q = PB.qnorm(PB.qmul(r.q, q))
+                self.prev, self.acc = cur, 0.0
+                return self._out(s)
+            self._wake()
         self.acc += dt
         n = int(self.acc / H + 1e-9)
         if n > MAX_SUBSTEPS:
@@ -223,6 +305,8 @@ class Model:
         self.prev = cur
         if not all(np.isfinite(b.x).all() and np.isfinite(b.q).all() for b in self.bodies):
             self.reset(kin, s)
+            return self._out(s)
+        self._watch(dt)
         return self._out(s)
 
     def _contacts(self):
