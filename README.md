@@ -171,16 +171,24 @@ Nothing about races or bodies is hard-coded:
   build - the audit must catch every one.
 - **`newtech`**: compares every retail file against a registry of what the kit has measured; a new
   chunk, flag, blend mode, texture type or table column stops the run before it is converted wrong.
-- **27 unit tests** (`selftest`), pinning rules that once broke items in game.
+- **38 unit tests** (`selftest`), pinning rules that once broke items in game.
 
 ## Physics
 
 Retail moves capes, plumes and chains with a runtime physics engine (`.phys`); a 3.3.5a client has
 none. The kit reads `.phys` completely (`phys <fdid>` dumps bodies, shapes, joints, motors) and
-includes a tested XPBD solver with contacts against the wearer stand-in shapes the file carries.
-Models ship in retail's authored bind pose; a simulated rest pose ships only after it has been
-compared with retail footage. True 1:1 motion needs runtime physics in a client mod (contract in
-`references/client-extension.md`).
+ships two tested XPBD solvers:
+
+- `physlive.py` - the LIVE reference: retail's bodies, joints, limits and motors stepped every
+  frame from the wearer's real motion, in world space (the camera never moves cloth), joined
+  bodies never colliding, contacts against the item's own stand-in shapes, fixed 1/120 s substeps,
+  safe resets. A client mod's solver is held to it value for value; the full contract (client
+  addresses, data row, budget at ~6.5 us per item, the proof to carry) is in
+  `references/client-extension.md` section 5, every rule's evidence in `references/rules.md`
+  section 6.
+- `physbake.py` - offline rest-pose study tool (`phys <fdid> --settle`, `--survey`).
+
+On a stock client models ship in retail's authored bind pose.
 
 ## Repository layout
 

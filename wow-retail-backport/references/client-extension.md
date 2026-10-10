@@ -41,6 +41,17 @@ The contract:
    vertex = retail skin point + height along its normal -> the corresponding
    point on the legacy skin at the same height, weights = the legacy skin's own
    weights there (the piece moves exactly as the skin).
+   Then clear it out of the skin in bind and in Stand/Walk/Run, AGAIN after
+   skinning on the file's own 8-bit weights and tagged bones (what the client
+   blends), at most 2 cm per point: clearing only on the float weights left
+   skin through 9.7% of a pair of pants while running (quantisation sank the
+   cleared points); clearing without a cap chased a leg swinging through the
+   cloth 31 cm out (spikes).
+7. PACK EVERY FILE THE MOD NAMES AT RUNTIME. A mod that builds per-body file
+   names itself (`<stem>_<race><sex>[family].m2`) names files no table row
+   names: the archive closure and its verify must enumerate them from the
+   mod's own naming rule, or every such piece vanishes in game while the
+   verify reports 0 missing (measured: 61,790 files left out once).
 6. extension.json lists, per new display id, each piece file per client race
    and sex (`skinned_to_retail_bones` true = bind by name hash).
 
@@ -72,33 +83,50 @@ compositor face regions draw the base skin only if the CharSections row has
 flag 0x8; only geosets <= 2000 are hidden by the client (the mod owns 20xx and
 >= 21); `<= 65,535` vertices, palette <= 75 bones, bone index < 256.
 
-## 5. Physics (.phys): the only route to 1:1 retail motion
+## 5. Physics (.phys): retail motion, live
 
-Retail simulates every frame; 3.3.5 never does. A mod that wants 1:1:
-1. Reads the model's .phys (physread.py documents every chunk and field;
-   tags byte-reversed; BDY4/SHP2/SHJ2/REV2/WLJ3 version 6; angles in degrees;
-   BDY 0x18 = signed gravity scale; motors: max torque, mode 1 = position, Hz,
-   damping ratio).
-2. Each frame after the client's bone build: kinematic bodies take their
-   bones' matrices; dynamic bodies are stepped (gravity -10 yd/s^2 x gravity
-   scale, retail damping, joints and limits, motors, CONTACTS with the
-   kinematic bodies' shapes - those are the wearer stand-ins; the character
-   itself has no physics) and REPLACE their bones' matrices.
-3. Fixed step (1/30 s with substeps; physbake.py is a tested XPBD reference:
-   gyroscopic term, full inertia from the shapes, rotation about the centre of
-   mass, weld/motor signs, contacts with static friction), state per model
-   instance, reset on model change, budgeted (only visible models, a cap per
-   frame).
-4. Proven before shipping: the same model stepped by the mod and by physbake.py
-   from the same start state must agree within 1 mm over 10 s; then the user's
-   in-game check against retail videos/screenshots (the reference solver is
-   itself not yet compared with retail's engine: rules.md section 6).
-Until a mod does this, the kit ships retail's authored bind pose (or, once
-confirmed in game, the settled rest pose with contacts).
+Retail simulates every frame; 3.3.5 never does. The contract (built in a
+private client extension and gated offline; rules.md section 6 has every
+rule's evidence):
+1. DATA, built offline per shipped file: the model's .phys (physread.py: tags
+   byte-reversed; BDY4/SHP2/SHJ2/REV2/WLJ3 version 6; angles DEGREES; BDY 0x18
+   = signed gravity scale; motors: max torque, mode 1 = position, Hz, damping
+   ratio) digested into a fixed binary row: bodies (kinematic flag, bone,
+   origin + the file's pivot shift, gravity scale, damping, inverse mass,
+   centre of mass, inertia and its inverse), capsules (body-local), joints
+   (anchors, orthonormal frames, limits, cone, weld Hz/ratio, motor), keyed
+   by FNV-1a of the lowercased path with `/` -> `\` and `.mdx` -> `.m2`, plus
+   the path itself (exact compare after the hash). A model with no row costs
+   one cached lookup on its shared asset (`CM2Shared + 0x3C` holds its path).
+2. HOOK: right after the client builds a model's bone matrices
+   (CM2Model::BuildBoneMatrices 0x0082F0F0, once per model per frame; matrices
+   at the pointer `CM2Model + 0x98`, row-vector, translation in 12..14). Read
+   the bones and their parents (shared M2 header at `CM2Shared + 0x150`: +0x2C
+   count, +0x30 bones, stride 0x58, parent int16 at +0x08), every read and
+   write behind an exception guard.
+3. WORLD SPACE: world = bone x `scene(CM2Model + 0x28) + 0xC4` (row-vector);
+   simulate there (physlive.Model.step), write each dynamic body's bone back
+   through that matrix's inverse, carry every descendant bone by its parent's
+   delta.
+4. STATE per model instance (keyed by the model, re-made when its shared
+   asset changes), forgotten when unseen for 2 s; time from a high-resolution
+   clock; the resets of rules.md section 6.
+5. BUDGET: about 0.25 ms of physics a frame; past it a load level L makes each
+   item step every 2^L frames on its own phase and ride rigidly with its root
+   between (catching up the missed time, capped at 6 substeps). Measured cost
+   about 6.5 us per item per frame.
+6. PROOF before shipping: the mod's solver against `physlive.py` on the same
+   rows and frames (rules.md section 6 "Proof"), the glue (matrix round trip,
+   descendant carry in either bone order, rigid carry), gate P1 over every
+   setup, then the user in game.
+Without a mod (or without the data row) the item shows retail's authored bind
+pose: plumes and tentacles stand as modelled.
 
 ## 6. Proven in practice
 
 Sections 1-4 have been implemented in a private 3.3.5a client extension
 (bone-hash binding of retail pieces, appended tables, retail-race bodies) and
-checked in game; every number in this file comes from that work. Nothing in
+checked in game; section 5 (live physics) is implemented there and gated
+offline (reference parity + P1), in-game confirmation pending. Every number in
+this file comes from that work. Nothing in
 this kit depends on any particular mod.

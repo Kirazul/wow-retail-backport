@@ -63,7 +63,7 @@ You never edit an output file by hand and never guess a rule.
 ```
 python --version                      # 3.11 or newer
 python -m pip install numpy pillow    # Pillow 11+ (DDS encoder); nothing else is needed
-python <skill>/scripts/bp.py selftest # must end with OK (27 tests; "skipped=2" is fine: those need retail files)
+python <skill>/scripts/bp.py selftest # must end with OK (38 tests; "skipped=2" is fine: those need retail files)
 ```
 `<skill>` is this skill's folder. `W` below is the project folder you choose
 (outside any git repo, e.g. `C:\backport\midnight`). Commands work in
@@ -105,7 +105,9 @@ step:
 next command. `convert-model --work W <fdid>` converts any single retail model
 (a doodad, an effect) with the same rules. `phys --work W <fdid> [--settle]`
 dumps and simulates a model's retail physics; `phys --work W --survey` does it
-for every physics model of the selection (rules.md section 6).
+for every physics model of the selection (rules.md section 6). Live physics in
+a client mod is held to `scripts/lib/physlive.py` (client-extension.md
+section 5).
 
 ## Recipes (what to put in step 5; full detail: references/pipeline.md "Recipes")
 
@@ -128,8 +130,8 @@ Ship ONE project per client: its tables are the client's own plus all our rows.
 
 | Slot | Tier 1 (any 3.3.5a client, this kit's archive + tables) | Tier 2 (needs a client mod; `build --extension`) |
 |---|---|---|
-| Head | retail's own per-race helm, placed for each client body (measured shift); hides hair/ears/facial as retail does; invisible stand-in where retail cuts none | helms on new retail-race bodies |
-| Shoulders | retail models (race-agnostic), left/right, enhanced variant on top-tier looks | - |
+| Head | retail's own per-race helm, placed for each client body (measured shift); hides hair/ears/facial as retail does; invisible stand-in where retail cuts none | helms on new retail-race bodies; live physics (plumes, tentacles) |
+| Shoulders | retail models (race-agnostic), left/right, enhanced variant on top-tier looks | live physics (ribbons, chains) |
 | Weapons, shields, off-hands | retail models, particles, glows, sheath type | retail sheath transform |
 | Chest, legs, feet, hands, wrists, waist, shirt, tabard | the 8 body textures (palettised), body geosets remapped to this client's bodies | retail 3D pieces (collars, skirts, boot shells, gauntlets, belt pieces), belt buckles |
 | Back | the cape texture + cape geoset | retail 3D capes, quivers |
@@ -173,6 +175,9 @@ pipeline again from step 7. Full procedure: references/new-retail-tech.md.
 | Legs vanish under boots, missing feet | geoset variant the client body lacks | `measure` geoset map |
 | Glow missing on the top-tier look | GeosetGroupOverride ignored | attachment rule (rules.md) |
 | Parts fly / spin off | bad bone track | gate M8 motion |
+| Plumes/ribbons stand stiff, never swing | retail moves them with runtime physics | Tier 2 live physics (client-extension.md section 5); stock: bind pose |
+| Physics cloth moves when the camera turns | simulated in camera-relative space | simulate in the world (rules.md section 6) |
+| 3D pieces all gone, verify said 0 missing | runtime-named per-body files not packed | client-extension.md section 1, item 7 |
 | Checker box | missing model file | closure gate C1/C2, invisible stand-ins |
 | Crash on load | seq 0 external, > 1024 px texture, BLP encoding 3, shader id > 0x8003, unchecked index | gates M1/M2/M5/T1 |
 | Hair through the helm | helm-vis rows missing | tables HelmetGeosetVisData |

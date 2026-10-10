@@ -121,38 +121,47 @@ Blood Elf). The .phys file brings its own stand-ins for the wearer: shapes on
 its KINEMATIC bodies (258 kinematic bodies with shapes: 255 capsules, 6
 hulls). Hoods, plumes and chains rest on those.
 
-**What 3.3.5 can do.** Nothing at runtime: the client has no physics engine.
-The options, from most to least faithful:
+**What 3.3.5 can do.** The client has no physics engine, but a client mod
+can run retail's physics LIVE: built, matched against the reference and gated
+offline (2026-10-10; client-extension.md section 5 is the contract). Options,
+from most to least faithful:
 
 | Option | Fidelity | Where | Status |
 |---|---|---|---|
-| Runtime physics in a client mod (Domino rules on the bone matrices each frame) | 1:1: swing while running, rest at idle | TIER 2, references/client-extension.md "Physics" | not built anywhere yet |
-| Offline REST POSE: simulate at rest WITH contacts against the kinematic stand-ins, bake the settled pose into Stand | retail's idle rest pose (no swing) | physbake.settle (contacts DONE, tests pin them); baking it into shipped models is OFF until confirmed in game | study tool: `bp.py phys <fdid> --settle`, `--survey` |
-| Retail's authored BIND pose (what ships today) | parts hang as modelled, never move | convert.py (default) | DONE |
+| RUNTIME physics in a client mod: retail's bodies, shapes, joints, limits and motors stepped every frame from the wearer's real motion | 1:1 data, live: swing while walking, running, jumping; rest at idle | Tier 2, client-extension.md section 5; reference `physlive.py` | built and gated offline (reference = mod, exact over the first second); in-game confirmation pending |
+| Offline REST POSE baked into Stand | retail's idle rest pose, no swing | physbake.settle (contacts with static friction) | study tool only (`phys <fdid> --settle`, `--survey`) |
+| Retail's authored BIND pose | parts stand as modelled, never move | convert.py (default; what a stock client shows) | DONE |
 
-The in-game failure (2026-10-09: settled helms beside the head) had one
-PROVEN flaw behind it: the solver had NO contacts, so parts fell through the
-stand-ins. Contacts are now in (`physbake.Contacts`: dynamic capsules and hull
-vertices against kinematic capsules, static friction from the shapes'
-friction, pairs overlapping in the bind pose left alone). The 3-test proof: a
-part dropped on a stand-in rests ON it; with contacts off it falls through
-(the bug); an authored overlap is not shot out.
+**The live rules (each measured; `physlive.py`, tests `test_physlive.py`):**
 
-What is NOT proven (pilot on 20 retail physics models, both settles, 2026-10-09):
-all 20 settle (joint error <= 4.5 mm), but only 3 of 20 have parts that can
-touch a stand-in (contacts move their rest by <= 3 cm). Most chains have
-nothing to rest on and DROOP under gravity within their joint limits - e.g. a
-Blood Elf plate helm's 3-link plume (no motor, 60 deg cones, half gravity)
-settles 30-46 cm from its authored pose. Whether retail droops it that far is
-UNKNOWN until compared with retail itself.
+| Rule | Why |
+|---|---|
+| Simulate in the WORLD: bone matrix (model-bind -> camera-relative in 3.3.5a) x the scene's camera-to-world matrix (`scene(CM2Model+0x28) + 0xC4`, `GetAttachmentPosition` 0x00831858..0x00831881); write back through its inverse | simulated in the client's camera-relative space, turning the camera swings the cloth (the "moves with the camera" class) |
+| Kinematic bodies follow their bones (interpolated over the frame); dynamic bodies REPLACE their bones; every bone UNDER a dynamic bone is carried by its parent's delta (`B'c = Bc x Bp^-1 x B'p`; parents may come after children) | plume tips, glow cards and chain ends are child bones of the physics bones |
+| Bodies a joint connects never collide (Box2D `collideConnected = false`, PhysX / Havok defaults) | retail AUTHORS overlaps there: a raid helm's plume link sits 13 cm inside its 18 cm shell; colliding them tore the plume 6-8 cm off its joint |
+| Contacts: dynamic capsules against the kinematic bodies' capsules of the same model (a sphere = a zero-length capsule, a box or hull = its bounding capsule along its main axis), the dynamic one pushed out to touch | the stand-ins are the item's own kinematic shapes; retail characters carry no .phys |
+| A position motor (mode 1) springs the joint to its frames' alignment at its Hz on the link's CENTRE-OF-MASS inertia, never past max torque | Box2D / Domino soft constraints: an 8 Hz motor sags 6 g / (w^2 L) = 13.7 deg on a 10 cm link; the measured raid plume rests 19 deg (base) and 78 deg (tip) from its bind pose instead of standing straight up |
+| Fixed substep h = 1/120 s, 2 iterations (motors and soft welds in the first), at most 6 substeps a frame | frame-rate independent; XPBD stays stable with 8 Hz motors |
+| Gravity (0, 0, -10) yd/s^2 x the body's signed scale, simulated in world / s for a model scaled s | shapes keep their authored size on a scaled model; floating links (scale < 0) rise |
+| RESET to the client's own bone poses on the first frame, a gap > 0.25 s, a root jump > 4 yd, a scale change, any non-finite value | loading, alt-tab, teleports, mounts: never an explosion |
+| Data per SHIPPED file: the .phys digested (mass, centre of mass, inertia and inverse from the shapes, capsules, orthonormal joint frames, limits, motors) + that file's pivot shift | 1,368 shipped files from 304 .phys: every converted file keeps retail's bone list and parents; pivots move by ONE uniform shift (a helm placement shift) - body origins move by it, joint frames do not |
+| Cost ~6.5 us per item per frame (median 5, worst 19, all 1,368 measured); a per-frame budget (0.25 ms): past it items step every 2^L frames and ride RIGIDLY with the root between (missed time caught up) | zero FPS drop in crowded places; no pop, no stretch |
 
-Measure before shipping any bake: settle one droop model (`phys <fdid>
---settle`), draw it, and compare with a retail screenshot or video of the same
-item at idle; then a few more, then the user's in-game check. Only then make
-baking the default here. Until then the authored bind pose ships.
+**Proof a mod must carry before it ships** (all done for the reference
+implementation): the mod's solver and `physlive.py` on the SAME data rows and
+the same frames (stand, run, jump, turn, stop, teleport, variable frame time,
+a scaled model) - identical within 1e-8 over each model's first second; after
+that the two drift only by rounding that a swinging chain amplifies SMOOTHLY
+(1e-12 -> 1e-9 -> mm over seconds, never a jump), held to < 1 cm. Then gate
+P1 over every setup: finite, no self-reset, joints closed <= 2 mm at rest,
+nothing resting inside a shape it may touch, every body at rest after a 6 s
+stand, no body farther from the root than its chain. Then the user's in-game
+check: plumes droop and swing, ribbons and chains follow walking, running and
+jumping; turning the camera moves nothing.
 
-Never "settle" without contacts again; never ship a bake that was not
-compared with retail.
+Never bake a settle into shipped models without comparing it with retail;
+never simulate in the client's camera-relative space; never collide joined
+bodies.
 
 ## 7. Geosets, slots, helms
 

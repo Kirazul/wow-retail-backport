@@ -52,7 +52,11 @@
 | Helm a body-height above the head | helm authored on the character's bones hung on attachment 11 | body-space helms made point-local |
 | Helm 40 cm low / checker box on a race retail cuts no helm for | fallback to a file placed for another body, or a missing file | invisible stand-in under the body's own name |
 | Helms beside the head, plumes spinning (after a physics bake) | proven: the offline settle had no contacts (parts fell through the wearer stand-ins); unproven: whether retail droops free chains as far as a settle does | bind pose ships; contacts added; a bake ships only after comparison with retail (rules.md section 6) |
-| Stiff/pointy tentacles, plumes, chains | retail moves them with runtime physics; 3.3.5 has none | bind pose (HARD LIMIT); Tier 2 runtime physics |
+| Stiff/pointy tentacles, plumes, chains; ribbons that never move when jumping | retail moves them with runtime physics; 3.3.5 has none | bind pose on a stock client; Tier 2 LIVE physics (client-extension.md section 5, `physlive.py`) |
+| Physics parts swing when only the CAMERA turns | simulated in the client's camera-relative bone space | simulate in the world (bone x the scene's camera-to-world matrix), rules.md section 6 |
+| A plume torn off its socket, links shot away | joined bodies collided: retail authors the first link inside the helm shell | joined bodies never collide |
+| Every 3D chest/legs/feet/back/hands piece gone in game, verify said 0 missing | the archive closure followed table rows only; the mod builds per-body file names itself | closure and verify enumerate the mod's runtime names (client-extension.md section 1, item 7) |
+| Skin pokes through cloth while running on classic bodies | the posed clearance ran on float weights; the file ships 8-bit weights | clear again on the shipped weights, capped 2 cm (client-extension.md section 1, item 5) |
 | Legs vanish under boots, feet cut | the row asks a body for a geoset variant it lacks (506..510, 905, 1105, 1803/1804) | measured geoset map per client |
 | Footless footwraps | GeosetGroup[1] = -1 read as "no foot" | -1 = the default foot (2001) - client-mod rule (Tier 2 feet group 20) |
 | Black feet on a retail body | the body skin's foot rect empty, or a boot shell mapping outside it | body-port issue (client-extension.md); Tier 1 paints region 7 |
@@ -100,8 +104,10 @@ run:
 4. Boots: legs whole below the knee, feet present, no gap.
 5. No white, black or green areas; glows present on the top-tier colourway
    and absent on the lower ones.
-6. Walk, run, jump, cast, mount: nothing flies, spins or tears. Physics parts
-   rest in retail's authored pose (expected: no runtime physics on 3.3.5).
+6. Walk, run, jump, cast, mount: nothing flies, spins or tears. Physics parts:
+   with a live-physics mod they droop, swing and follow every move, and stay
+   still when only the camera turns; without one they keep retail's authored
+   pose.
 7. Weapons held the right way round, sheathed on the back/hip per type.
 8. Character panel, inspect, character select show the same look.
 9. A player WITHOUT the archive sees nothing broken (the server sends ids the
