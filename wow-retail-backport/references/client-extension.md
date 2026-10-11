@@ -85,47 +85,39 @@ flag 0x8; only geosets <= 2000 are hidden by the client (the mod owns 20xx and
 
 ## 5. Physics (.phys): retail motion, live
 
-Retail simulates every frame; 3.3.5 never does. The contract (built in a
-private client extension and gated offline; rules.md section 6 has every
-rule's evidence):
-1. DATA, built offline per shipped file: the model's .phys (physread.py: tags
-   byte-reversed; BDY4/SHP2/SHJ2/REV2/WLJ3 version 6; angles DEGREES; BDY 0x18
-   = signed gravity scale; motors: max torque, mode 1 = position, Hz, damping
-   ratio) digested into a fixed binary row: bodies (kinematic flag, bone,
-   origin + the file's pivot shift, gravity scale, damping, inverse mass,
-   centre of mass, inertia and its inverse), capsules (body-local), joints
-   (anchors, orthonormal frames, limits, cone, weld Hz/ratio, motor), keyed
-   by FNV-1a of the lowercased path with `/` -> `\` and `.mdx` -> `.m2`, plus
-   the path itself (exact compare after the hash). A model with no row costs
-   one cached lookup on its shared asset (`CM2Shared + 0x3C` holds its path).
-2. HOOK: right after the client builds a model's bone matrices
-   (CM2Model::BuildBoneMatrices 0x0082F0F0, once per model per frame; matrices
-   at the pointer `CM2Model + 0x98`, row-vector, translation in 12..14). Read
-   the bones and their parents (shared M2 header at `CM2Shared + 0x150`: +0x2C
-   count, +0x30 bones, stride 0x58, parent int16 at +0x08), every read and
-   write behind an exception guard.
-3. WORLD SPACE: world = bone x `scene(CM2Model + 0x28) + 0xC4` (row-vector;
-   CM2Scene 0x00821A20 rebuilds it from this frame's camera before any bone
-   build); simulate there (physlive.Model.step: the item rides its wearer, a
-   travel change is felt as bounded inertia), write each dynamic body's bone
-   back through that matrix's inverse, carry every descendant bone by its
-   parent's delta.
-4. STATE per model instance (keyed by the model, re-made when its shared
-   asset changes), forgotten when unseen for 2 s; the frame's time from the
-   SCENE's clock (`scene + 0x0C`, ms, CM2Scene::AdvanceTime 0x0081C9C0: the
-   game's own frame time - a clock read mid-render shook running items; a
-   second build in one frame takes 0 s; a scene whose clock stands still
-   falls back to a high-resolution clock after 0.1 s); the resets of rules.md
-   section 6.
-5. BUDGET: about 0.25 ms of physics a frame; past it a load level L makes each
-   item step every 2^L frames on its own phase and ride rigidly with its root
-   between (catching up the missed time, capped at 12 substeps). SLEEP (rules.md
-   section 6) makes a standing wearer's items nearly free. Measured cost about
-   19.5 us per moving item per frame, 0.5 us asleep.
-6. PROOF before shipping: the mod's solver against `physlive.py` on the same
-   rows and frames (rules.md section 6 "Proof"), the glue (matrix round trip,
-   descendant carry in either bone order, rigid carry), gate P1 over every
-   setup, then the user in game.
+Retail simulates every frame; 3.3.5 never does. A client mod runs retail's
+own engine (rules.md section 6; reference `scripts/ref/physics_domino.cpp`).
+The contract:
+1. DATA, built offline per shipped file: the .phys fields copied RAW (the
+   engine makes every conversion the client makes: degrees, clamps,
+   defaults, mass): bodies (Domino type, bone, origin + the file's pivot
+   shift, gravity / inertia scale, damping, carry, group), shapes (body,
+   type, friction, restitution, density, capsule ends + radius, hull index),
+   joints (type, bodies, motor mode, anchors, the file's frame rows, the six
+   limit / motor floats), PLYT hulls whole (vertices, planes, face edges,
+   half-edges, centroid, volume, area). Keyed by FNV-1a of the lowercased
+   path with `/` -> `\` and `.mdx` -> `.m2`, plus the path (exact compare). A
+   model with no row costs one cached lookup on its shared asset
+   (`CM2Shared + 0x3C` holds its path).
+2. HOOK: right after CM2Model::BuildBoneMatrices (0x0082F0F0; matrices at the
+   pointer `CM2Model + 0x98`, row-vector, translation in 12..14; bone records
+   at `CM2Shared + 0x150` -> +0x2C count, +0x30 bones, stride 0x58, parent
+   int16 +0x08, pivot +0x4C), every read and write behind an exception guard.
+3. SPACES: bone world = bone x S, S = `scene(CM2Model + 0x28) + 0xC4` (a
+   MIRROR, det -1: never decompose it); the instance placement = the model's
+   own matrix `CM2Model + 0xF4` x S (position, rotation, MODEL SCALE); write
+   each dynamic body's model-space bone back as bone x `CM2Model + 0xF4`;
+   carry every descendant bone by its parent's delta.
+4. STATE per model instance (re-made when its shared asset changes,
+   forgotten when unseen 2 s); the frame's time from the scene's clock
+   (`scene + 0x0C`, ms; a second build in one frame takes 0 s; a scene whose
+   clock stands still falls back to a high-resolution clock after 0.1 s);
+   per contact the 12-byte GJK cache and the 8-byte SAT feature cache.
+5. COST: every item steps every frame, as retail does (allowSleep is off for
+   items in the client); watch it with a perf counter on the hook.
+6. PROOF before shipping: rules.md section 6d (the client's own routines in
+   unicorn vs the port; the whole simulation on every shipped file under the
+   live glue), then the user in game.
 Without a mod (or without the data row) the item shows retail's authored bind
 pose: plumes and tentacles stand as modelled.
 

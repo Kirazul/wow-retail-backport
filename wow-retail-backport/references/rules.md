@@ -121,60 +121,109 @@ Blood Elf). The .phys file brings its own stand-ins for the wearer: shapes on
 its KINEMATIC bodies (258 kinematic bodies with shapes: 255 capsules, 6
 hulls). Hoods, plumes and chains rest on those.
 
-**What 3.3.5 can do.** The client has no physics engine, but a client mod
-can run retail's physics LIVE: built, matched against the reference and gated
-offline (2026-10-10; client-extension.md section 5 is the contract). Options,
-from most to least faithful:
+**What 3.3.5 can do.** The client has no physics engine, but a client mod can
+run RETAIL'S OWN ENGINE: Blizzard's "Domino" (a 3D Box2D-2.x-family solver),
+ported instruction by instruction from the Midnight 12.1.0.69933 client
+(macOS x86_64, __TEXT decrypted by emulating its first mod_init in unicorn,
+read with capstone; MoP 5.4.8 Wow-64.exe as a readable cross-check). The
+reference implementation is `scripts/ref/physics_domino.{h,cpp}` (pure C++,
+no client memory; every block names the retail function it was read from).
+Nothing in it is tuned. Status: ported 2026-10-11; narrowphases proven
+against retail's machine code (below); in-game confirmation pending.
 
 | Option | Fidelity | Where | Status |
 |---|---|---|---|
-| RUNTIME physics in a client mod: retail's bodies, shapes, joints, limits and motors stepped every frame from the wearer's real motion | 1:1 data, live: swing while walking, running, jumping; rest at idle | Tier 2, client-extension.md section 5; reference `physlive.py` | built and gated offline (reference = mod, exact over the first second); in-game confirmation pending |
-| Offline REST POSE baked into Stand | retail's idle rest pose, no swing | physbake.settle (contacts with static friction) | study tool only (`phys <fdid> --settle`, `--survey`) |
+| RUNTIME physics in a client mod: retail's engine, its data, its constants | 1:1 (bit-exact where proven, see Proof) | Tier 2, client-extension.md section 5; reference `scripts/ref/physics_domino.cpp` | built, proven offline; in-game confirmation pending |
+| Offline REST POSE baked into Stand | retail's idle rest pose, no swing | physbake.settle | study tool only (`phys <fdid> --settle`, `--survey`) |
 | Retail's authored BIND pose | parts stand as modelled, never move | convert.py (default; what a stock client shows) | DONE |
 
-**The live rules (each measured; `physlive.py`, tests `test_physlive.py`):**
+Superseded (do not use): the 2026-10-10 XPBD "item rides its wearer /
+bounded inertia / 1/240 s substeps / sleep" solver. It was ours, not
+retail's; the engine below replaces it.
+
+### 6a. The data (.phys v6; parser 0x1011AA600, upgrader 0x1011AAC90)
+
+Chunks in all 304 retail physics files: PHYS (v6), PHYT (u32), BDY4, SHP2,
+CAPS, JOIN, SHJ2; REV2 (45 files), WLJ3 (5), PLYT (21). Record sizes: BDY4
+0x30, SHP2 0x20, CAPS 0x1C, JOIN 0x10, SHJ2 0x7C, REV2 0x78, WLJ3 0x74.
+- BDY4: 0x00 u16 type (0 -> Domino KINEMATIC 1, 1 -> DYNAMIC 0, else static
+  2); 0x02 bone; 0x04 pos[3]; 0x10 u16 first shape; 0x14 i32 shape count;
+  0x18 GRAVITY scale (negative floats up); 0x1C INERTIA scale; 0x20 LINEAR
+  damping; 0x24 ANGULAR damping; 0x28 CARRY (default 0.9, data mostly 0.01);
+  0x2C u16 group (0x8000 head, 0x4000 instance root). Proven through the
+  game's setters (shuffles 0x1E at 0x1011AD7C0 and 0x93 at 0x1005E78D0).
+- SHP2: i16 type (1 capsule, 2 sphere, 3 PLYT hull, 0 box), i16 index, +8
+  friction, +0xC restitution, +0x10 density. CAPS: a[3], b[3], r (body local).
+- PLYT: u32 n, n x 0x50 headers {+0 nverts, +0x10 nfaces, +0x28 nhalfedges,
+  +0x38 centroid[3], +0x44 volume, +0x48 area}, then per hull: vertices
+  (12 B), planes (16 B: n, d with n.x = d), each face's first half-edge
+  (u8), half-edges (4 B: int8 TWIN OFFSET, origin vertex, face, next).
+- JOIN: u32 a, u32 b, pad, u16 type (1 SHJ2 -> Domino 7 shoulder, 3 REV2 -> 6
+  revolute, 2 WLJ3 -> 9 weld, 0 SPHJ -> 8, 4 PRS2 -> 5, 5 DSTJ -> 2), u16
+  index. Frames: 3x3 with the AXIS IMAGES AS ROWS + pos (A at 0x00/0x24, B at
+  0x30/0x54); positions x model scale.
+- SHJ2 0x60 twistLo, 0x64 twistHi, 0x68 cone (DEGREES), 0x6C maxTorque,
+  0x70 int8 mode, 0x74 Hz, 0x78 zeta (defaults Hz 1, zeta 0.7, mode 0).
+  REV2 0x60 lower, 0x64 upper (deg), 0x68 maxT, 0x6C int8 mode, 0x70 Hz,
+  0x74 zeta. WLJ3 0x60 angHz, 0x64 linHz, 0x68 angZeta, 0x6C linZeta.
+
+### 6b. The engine (Midnight Mac VAs; full detail in the reference's comments)
+
+| Stage | Rule |
+|---|---|
+| Instance (PhysicsRagdoll, world list +0x78) | its OWN private world (0x1005C98F0), gravity (0, 0, -10). Bodies: pos = Rot(q, pos) * scale + t, q = the placement's rotation; gyroscopic ON, angular cap ON, twist friction ON, allowSleep OFF (items never sleep). Fixtures: friction 0.6, restitution 0, ROLLING 0.2, hull radius 0.01, contact 10 Hz / 0.7; every shape of one item collides with every other except on the same body, on jointed bodies (collideConnected 0) and between two non-dynamic bodies; mix: friction sqrt(fA fB), restitution clamp(eA + eB, 0, 1), rolling sqrt |
+| Mass (0x1005E8270) | m = density x volume over shapes with finite density > 0 (non-dynamic: density 1); capsule (h pi + 4.18879 r) r^2, hull = file volume; centre = sum m c / M; M <= 1.18e-35 -> M = 0, im = 0 (NO fallback to 1: a shape-less dynamic body has no mass). Inertia about the COM (capsule 0x1005E1890, hull = Eberly polyhedral integrals 0x1005DCF30) x inertia scale, inverted when det > tiny |
+| Frame (0x1011ABC30) | dt = min(frame dt, 1/30); inv = 1/dt; invc = min(inv, 45); linLo 0.25 invc, linHi 0.5 invc, angLo pi/8 invc, angHi pi/4 invc. Order: drive -> step each instance (only when ALL its bodies are awake; 8 velocity / 12 position iterations) -> bones |
+| Drive (0x1011B3790 / 0x1011B4370) | placement split: axis lengths (guard 2.38e-7), all > 0.016 -> normalise, det < 0 -> negate the third (THE MODEL'S placement - see 6c), scale = max(|axis 1|, 0.016); scale change > 0.1% -> rescale bodies. First frame: every body to its bone's world pivot with the placement's rotation. Each kinematic body: target = bone world pivot + normalised axes; s = max(fracAngular, fracLinear, carry) where frac(x) = 0 under lo, 1 over hi, else carry + (1 - carry) (x - lo)/(hi - lo); s of the move is a TELEPORT (nlerp + COM shift), the rest velocity; the group head (0x8000) carries the following dynamic bodies by its delta (the root's delta when a 0x4000 root exists) |
+| Island step (0x1005F2E40) | dtRatio = min(inv_dt0 dt, 2); dynamic: implicit gyroscopic Newton step in body space, v += h im (m gs g), damping v *= clamp(1 - h ld, 0, 1); prepare joints then contacts (warm start x dtRatio); 8 iterations joints then contacts; integrate: non-finite -> 0, |h v| <= 4, |h w| <= pi/4 (rsqrt + Newton), q renormalised; 12 position iterations, joints then contacts, NO early exit |
+| Shoulder (0x1006021C0 / 0x100603590 / 0x1006039B0) | swing = atan2approx(\|a x b\|, a.b) of the frames' Z; twist = 2 atan2approx(rel.z, rel.w); twist on iff lo < hi, \|hi - lo\| < 4 deg locks; cone clamped [10, 170] deg; motor mode 1 = soft position per axis (2 pi Hz, zeta), mode 0 off, else velocity capped by maxTorque; position pass clamps (err -+ 2 deg) to 30 deg x 0.2; atan2approx: \|r\| < 1: r / (1 + 0.28 r^2), else +-pi/2 - r / (r^2 + 0.28) |
+| Revolute (0x1005FF410 / ...3C0 / ...840) | hinge = Rot(fA, Z); lower clamped [-2 pi, 2 pi], centre/half of the range; 2-row lock; limit states as Box2D; soft position motor |
+| Weld (0x1006064E0 / ...7320 / ...7690) | angular soft when angHz > 0 (c = 4 pi Hz zeta m, k = (2 pi Hz)^2 m), impulse capped pi/4 inv trace(I); linear soft when linHz > 0; position pass only for the rigid parts |
+| Contacts (prepare 0x1005EC2E0, velocity 0x1005ED970, position 0x1005EE250) | soft (10 Hz, 0.7) when both dynamic with mass ratio > 10 or one kinematic; restitution under -2 yd/s; 2D friction at the manifold centre + twist friction (mu x 0.5 x RMS radius) + ROLLING resistance; position: rigid points only, beta 0.2, slop 0.005; broadphase fat AABB +- 0.1, refit past 4 margins |
+| Capsule vs capsule (0x1005CD880) | exact segment closest points incl. parallel (cos^2 >= 0.998782) and degenerate; point between the surfaces |
+| Hull vs capsule (0x1005DC920 -> 0x1005DC020) | GJK (b2Distance in 3D, warm-started from the contact's 12-byte cache {metric, idxA[4], idxB[4]}, kept within 0.25..4 x metric, 20 iterations). No contact past r + 0.01. A clear gap (>= 0.005, simplex not full): the face within 5 deg (0.99619472) of the GJK normal is clipped (0x1005DBAB0), else one point keyed from the simplex. Deeper: SAT over faces, then edges whose Gauss-map arcs the segment crosses (an edge wins only past 0.9 x best + 0.0025); edge contact = segment closest points (0x1005D1780) |
+| Hull vs hull (0x1005E11D0 -> 0x1005E0500) | Gregorius' SAT with a per-contact 8-byte FEATURE CACHE {sep, idx, idx, type 1 A face / 2 B face / 3 edge pair}: last frame's feature is re-tested and reused while its separation moved < 0.005. Full SAT: faces of A, faces of B (must beat 0.98 x best + 0.0025), edge pairs (Gauss-map test from edge vectors, normal EA x EB oriented by the larger centroid offset); any positive separation is cached and ends it. Face contact: the incident face (the face around the support vertex most along -n) clipped to the reference face's side planes PUSHED OUT BY 0.02, points within 0.02 PROJECTED onto the reference face; more than 4 reduced (0x1005DB4A0: along a tangent, furthest, largest triangle, furthest outside; 0.99 hysteresis, 0.02^2 floor). The edge pair wins if edgeSep > 0.9 faceSep + 0.0025 with < 2 face points, or edgeSep > 0.9 min(point seps) + 0.0025. Margin 0.02 = both 0.01 radii |
+| Bones (0x1011B4BF0) | dynamic bodies only: bone = [conj(q_inst) q_body \| conj(q_inst)(origin - pos_inst) / scale] x T(-pivot), MODEL space |
+| Numerics | rsqrtss / rcpss + ONE Newton step everywhere the client uses them (renormalisations, soft gammas, clip divisions, segment solves); exact divss for prepare-time 3x3 inverses. Hardware estimates differ between CPUs, so bit-exactness is per machine |
+
+### 6c. The 3.3.5a glue (measured live 2026-10-11)
 
 | Rule | Why |
 |---|---|
-| Simulate in the WORLD: bone matrix (model-bind -> camera-relative in 3.3.5a) x the scene's camera-to-world matrix (`scene(CM2Model+0x28) + 0xC4`, `GetAttachmentPosition` 0x00831858..0x00831881); write back through its inverse | simulated in the client's camera-relative space, turning the camera swings the cloth (the "moves with the camera" class) |
-| The item RIDES its wearer: every frame the dynamic bodies are first carried rigidly with the root (positions, orientations, velocities), so steady running, turning, flying move nothing and DAMPING ACTS RELATIVE TO THE WEARER; a CHANGE of the root's velocity / spin is felt as inertia: at most 0.5 yd/s (2 rad/s) of it within 0.2 s, released at 5 yd/s^2 (20 rad/s^2), frame-rate independent - a sustained change (a jump arc, a turn's centripetal pull) is felt up to 2.5 yd/s^2 | damping on WORLD velocity (retail's .phys damping is 3..12 / s) dragged a tassel 70 deg back at a steady 7 yd/s run, flung it 90 deg at the start and moved real items up to 40 yd/s relative to the wearer (now <= 2.3); WoW's travel changes are instant (0 -> 7 yd/s in one frame, a 19.3 yd/s^2 jump arc, mouse snaps). The .phys has no locomotion fields (BDY4 0x1C / 0x28 sit on kinematic roots too): the bounds are the engine's, as Unreal AnimDynamics / Havok local-space ragdolls bound them |
-| TIME and TRAVEL: the frame's time is the SCENE's clock (`scene + 0x0C`, ms, advanced once a frame by CM2Scene::AdvanceTime 0x0081C9C0; the world scene's from 0x007F0B8C), so a second bone build in one frame takes 0 s; the root's travel is measured over 0.2 s and a change ALONG it is felt only past 0.1 yd/s + 3 % of the speed (hysteresis) - turns, jumps and sway (across it) pass whole | the game moves the wearer by ITS frame time: timed by a clock read mid-render, a 1 ms disagreement felt as a travel change shook a running tassel 17 deg (7 mm a frame); a clock disagreement only RESCALES the travel, never turns it. Measured: 0.04 deg, 0 mm at 1 ms disagreement, 7 and 30 yd/s |
-| Kinematic bodies follow their bones (interpolated over the frame); dynamic bodies REPLACE their bones; every bone UNDER a dynamic bone is carried by its parent's delta (`B'c = Bc x Bp^-1 x B'p`; parents may come after children) | plume tips, glow cards and chain ends are child bones of the physics bones |
-| Bodies a joint connects never collide (Box2D `collideConnected = false`, PhysX / Havok defaults) | retail AUTHORS overlaps there: a raid helm's plume link sits 13 cm inside its 18 cm shell; colliding them tore the plume 6-8 cm off its joint |
-| Contacts: dynamic capsules against the kinematic bodies' capsules of the same model (a sphere = a zero-length capsule, a box or hull = its bounding capsule along its main axis), the dynamic one pushed out to touch | the stand-ins are the item's own kinematic shapes; retail characters carry no .phys |
-| A position motor (mode 1) springs the joint to its frames' alignment at its Hz on the link's CENTRE-OF-MASS inertia, never past max torque | Box2D / Domino soft constraints: an 8 Hz motor sags 6 g / (w^2 L) = 13.7 deg on a 10 cm link; the measured raid plume rests 19 deg (base) and 78 deg (tip) from its bind pose instead of standing straight up |
-| Fixed substep h = 1/240 s, 4 iterations (motors and soft welds in the first), at most 12 substeps a frame; 4 iterations because 2 left a hinge resting on its limit flickering 1.35 mm (0.43 at 4; 8 costs twice as much for 0.15) | frame-rate independent; at 1/120 s a resting 3-link tassel flickered 0.85 mm frame to frame (unconverged joints return as velocity) - 0.03 mm at 1/240; smaller substeps beat more iterations (4 iterations: 0.19 mm) |
-| Gravity (0, 0, -10) yd/s^2 x the body's signed scale, simulated in world / s for a model scaled s | shapes keep their authored size on a scaled model; floating links (scale < 0) rise |
-| RESET to the client's own bone poses on the first frame, a gap > 0.25 s, a root jump > 4 yd, a scale change, any non-finite value | loading, alt-tab, teleports, mounts: never an explosion |
-| Data per SHIPPED file: the .phys digested (mass, centre of mass, inertia and inverse from the shapes, capsules, orthonormal joint frames, limits, motors) + that file's pivot shift | 1,368 shipped files from 304 .phys: every converted file keeps retail's bone list and parents; pivots move by ONE uniform shift (a helm placement shift) - body origins move by it, joint frames do not |
-| SLEEP: a model whose every body point stays inside a 3 mm box (on its root) for 0.5 s stops being stepped and holds that pose exactly; it wakes on what it would feel: a pending inertia push over 5 cm/s (or 3 deg/s; the WHOLE pending push - one frame's share at 144 fps is under it), its root tilting against gravity faster than 3 deg/s, another kinematic body moving on the root faster than 5 cm/s - a steady run asleep costs nothing | Box2D sleeps below 1 cm/s for 0.5 s (a 5 mm box); 3 mm settles the last unconverged-joint flicker (a hinge on its limit: 1.35 mm at 2 iterations, 0.43 at 4) and the 2-3 mm/s slide of a chain wedged in its cone-and-twist limit corner, while any swing over 1.5 mm keeps swinging; a standing wearer's items cost ~0.5 us a frame |
-| A chain balanced high on its cone rims ROLLS OFF slowly under retail's heavy angular damping (10 / s) - up to ~160 s, its gravity energy falling the whole time (24.264 -> 24.021 on a Void Elf mail helm), then dead still: physics, not a fault. The gate's test for a solver fault is ENERGY: a damped chain on a still wearer that moves while its gravity energy does not fall is being fed by the solver | measured: no energy is ever gained; a combined swing-twist limit and an own-axis twist correction both changed nothing, so the separate cone + twist limits stay |
-| Cost ~19.5 us per moving item per frame (median 15, worst 54), ~0.5 us asleep (all 1,368 measured); a per-frame budget (0.25 ms): past it items step every 2^L frames and ride RIGIDLY with the root between (missed time caught up) | zero FPS drop in crowded places; no pop, no stretch |
+| A 3.3.5a bone matrix maps a model-bind point into the scene's CAMERA-RELATIVE space; `scene(CM2Model + 0x28) + 0xC4` takes that space to the world and is a MIRROR (det -1). NEVER decompose it as a placement | the first port took it as the placement: retail's "det < 0 -> negate the third axis" broke its inverse and every simulated bone was written reflected through the camera (cam z +11.96 -> -12.05): sheets stretched from the wearer past the camera, "tearing left and right" |
+| The instance placement is the MODEL'S OWN matrix `CM2Model + 0xF4` (4x4 row-vector, camera-relative, model scale included) times the scene matrix | live: equals an unanimated bone 0 exactly; scale 0.9775 shoulders, 1.0656 belt, 1.15 helm on a Zandalari; without it items were simulated at scale 1 |
+| Write back: retail's model-space bone x `CM2Model + 0xF4` (row vectors); every bone under a dynamic bone carried by its parent's delta | the client draws camera-relative bones |
+| Frame time = the scene's clock (`scene + 0x0C`, ms, CM2Scene::AdvanceTime 0x0081C9C0); a second build in one frame takes 0 s | a clock read mid-render disagrees with the game's movement |
+| Hook right after CM2Model::BuildBoneMatrices (0x0082F0F0); state per model instance, forgotten when unseen 2 s | |
+| A shape-less dynamic body has mass 0 and moves only by its head's teleport share (carry): a pair like the Amani Loa off-hand's bones 1 -> 3 drifts by half the wearer's travel - in retail too; no vertex uses those bones | measured on all 6 files; not a fault |
 
-**Proof a mod must carry before it ships** (all done for the reference
-implementation): the mod's solver and `physlive.py` on the SAME data rows and
-the same frames (stand, run, jump, turn, stop, teleport, variable frame time,
-a scaled model) - identical within 1e-8 over each model's first second; after
-that the two drift only by rounding that the motion amplifies SMOOTHLY (never a
-jump): running tassels are CHAOTIC - the reference itself carries a 1e-12 nudge
-to 6 cm in 4 s - so the late check is relative: no further from the reference
-than the reference strays from itself under a 1e-12 nudge over the run (x 2),
-never required below 1 cm. Then gate
-P1 over every setup (60 s stands around a run, jump and turn): finite, no
-self-reset, joints closed <= 2 mm at rest, nothing resting inside a shape it
-may touch, at rest at the end of each stand (flicker <= 0.5 mm - half a pixel
-1 m from the camera at 1080p - drift <= 1 mm), asleep, or still sliding
-downhill (gravity energy falling over the last 10 s), no body farther from
-the root than its chain, never FLUNG (<= 4 yd/s relative to the wearer while
-it runs, jumps and turns). A reference in Python must add as the mod does
-(plain left-to-right loops: Python 3.12+ `sum()` compensates, and six 1/30 s
-frames then reach the 0.2 s window edge on the other side of a C++ port). Then the user's in-game
-check: plumes droop and swing, ribbons and chains follow walking, running and
-jumping; turning the camera moves nothing.
+### 6d. Proof (how it was verified; do the same for any port)
 
-Never bake a settle into shipped models without comparing it with retail;
-never simulate in the client's camera-relative space; never collide joined
-bodies; never damp world velocity; never time a frame by a clock read mid-render.
+1. ORACLE: run retail's own functions in unicorn on the decrypted __TEXT
+   (stack guard pointer at 0x1036F83F8 -> a zero qword; stubs: ___chkstk_darwin
+   0x103259882 = return, memcpy 0x103259D2C, __stack_chk_fail 0x100001A40 =
+   stop) with crafted inputs (a hull record is 0x50 bytes: centroid, pointers
+   to vertices / planes / face edges / half-edges, counts, volume, area,
+   radius), against the port compiled with exact estimates
+   (PHYS_EXACT_ESTIMATES: an emulator computes rsqrt/rcp exactly).
+   Results: hull vs hull 8,200 random poses of all 41 retail hulls - 0
+   mismatches, worst 2.4e-7; hull vs capsule 20,500 - same contact count and
+   feature keys everywhere, 5 near-parallel edge-edge cases (0.025 %) differ
+   by <= 0.1 deg of normal / 3 cm of point inside GJK's last digits (GJK
+   ported as b2Distance-3D, not instruction by instruction).
+2. WHOLE SIMULATION on every shipped file (1,368) as the live glue drives it
+   (mirrored camera matrix, model scale in the bones): stand, walk, 180 deg
+   turn, camera orbit - nothing detaches; at rest a simulated bone moves
+   median 0.04 mm a frame; orbiting the camera vs not changes results only
+   by float rounding of world coordinates (<= 2.8 mm/frame on a swinging
+   chain).
+3. The user in game: plumes droop and swing, ribbons and chains follow
+   walking, running and jumping; turning the camera moves nothing.
+
+Never decompose the scene matrix; never simulate at scale 1 when the bones
+carry a scale; never add rules the client does not have (sleep, inertia
+bounds, damping relative to the wearer were ours and are gone); prove every
+routine against the client's own code before shipping.
 
 ## 7. Geosets, slots, helms
 

@@ -171,21 +171,21 @@ Nothing about races or bodies is hard-coded:
   build - the audit must catch every one.
 - **`newtech`**: compares every retail file against a registry of what the kit has measured; a new
   chunk, flag, blend mode, texture type or table column stops the run before it is converted wrong.
-- **41 unit tests** (`selftest`), pinning rules that once broke items in game.
+- **27 unit tests** (`selftest`), pinning rules that once broke items in game.
 
 ## Physics
 
 Retail moves capes, plumes and chains with a runtime physics engine (`.phys`); a 3.3.5a client has
 none. The kit reads `.phys` completely (`phys <fdid>` dumps bodies, shapes, joints, motors) and
-ships two tested XPBD solvers:
+ships retail's own engine, ported:
 
-- `physlive.py` - the LIVE reference: retail's bodies, joints, limits and motors stepped every
-  frame from the wearer's real motion, in world space (the camera never moves cloth), joined
-  bodies never colliding, contacts against the item's own stand-in shapes, fixed 1/240 s substeps with 4 iterations, sleep at rest,
-  safe resets. A client mod's solver is held to it value for value; the full contract (client
-  addresses, data row, budget at ~19.5 us per moving item, ~0.5 us asleep, the proof to carry) is in
-  `references/client-extension.md` section 5, every rule's evidence in `references/rules.md`
-  section 6.
+- `scripts/ref/physics_domino.{h,cpp}` - Blizzard's "Domino" solver (3D Box2D family) ported
+  instruction by instruction from the Midnight 12.1 client: drive, island, shoulder / revolute /
+  weld joints, capsule and hull contacts (GJK, SAT with feature cache, clipping, reduction),
+  rolling and twist friction, retail's SSE estimate + Newton numerics. Proven against the
+  client's own machine code run in an emulator (references/rules.md section 6d). The client-mod
+  contract (addresses, the mirrored scene matrix, the model's own matrix, data row) is
+  `references/client-extension.md` section 5.
 - `physbake.py` - offline rest-pose study tool (`phys <fdid> --settle`, `--survey`).
 
 On a stock client models ship in retail's authored bind pose.
@@ -207,6 +207,7 @@ wow-retail-backport/              the skill (copy this folder)
   scripts/
     bp.py                         the command line
     lib/                          the toolkit (pure Python + numpy + Pillow)
+    ref/                          retail's physics engine ported (C++ reference for client mods)
     data/known_tech.json          what retail uses (measured registry)
     tests/                        selftest
 ```

@@ -63,7 +63,7 @@ You never edit an output file by hand and never guess a rule.
 ```
 python --version                      # 3.11 or newer
 python -m pip install numpy pillow    # Pillow 11+ (DDS encoder); nothing else is needed
-python <skill>/scripts/bp.py selftest # must end with OK (50 tests; "skipped=2" is fine: those need retail files)
+python <skill>/scripts/bp.py selftest # must end with OK (27 tests; "skipped=2" is fine: those need retail files)
 ```
 `<skill>` is this skill's folder. `W` below is the project folder you choose
 (outside any git repo, e.g. `C:\backport\midnight`). Commands work in
@@ -106,8 +106,8 @@ next command. `convert-model --work W <fdid>` converts any single retail model
 (a doodad, an effect) with the same rules. `phys --work W <fdid> [--settle]`
 dumps and simulates a model's retail physics; `phys --work W --survey` does it
 for every physics model of the selection (rules.md section 6). Live physics in
-a client mod is held to `scripts/lib/physlive.py` (client-extension.md
-section 5).
+a client mod runs retail's own engine, `scripts/ref/physics_domino.cpp`
+(client-extension.md section 5, rules.md section 6).
 
 ## Recipes (what to put in step 5; full detail: references/pipeline.md "Recipes")
 
